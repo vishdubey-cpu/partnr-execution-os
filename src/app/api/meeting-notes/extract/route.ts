@@ -11,11 +11,19 @@ import { prisma } from "@/lib/prisma";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { meetingName, meetingDate, rawNotes } = body;
+    const { meetingDate, rawNotes } = body;
+    // Auto-generate meeting name from date if not provided
+    const meetingName: string =
+      body.meetingName?.trim() ||
+      `Meeting – ${new Date(meetingDate || Date.now()).toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })}`;
 
-    if (!meetingName || !meetingDate || !rawNotes) {
+    if (!meetingDate || !rawNotes) {
       return NextResponse.json(
-        { error: "meetingName, meetingDate, and rawNotes are required" },
+        { error: "meetingDate and rawNotes are required" },
         { status: 400 }
       );
     }

@@ -52,9 +52,23 @@ function parseDateHint(text: string, referenceDate: Date): string | null {
   const isoMatch = text.match(/(\d{4}-\d{2}-\d{2})/);
   if (isoMatch) return isoMatch[1];
 
-  // "22 Mar" or "March 22"
-  const namedMatch = lower.match(/(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/);
-  const namedMatch2 = lower.match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})/);
+  // today / tomorrow / eod
+  if (/\btoday\b|\beod\b|\bend of day\b/.test(lower)) {
+    return referenceDate.toISOString().split("T")[0];
+  }
+  if (/\btomorrow\b/.test(lower)) {
+    const d = new Date(referenceDate);
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split("T")[0];
+  }
+
+  // "22 Mar", "22nd Mar", "22nd March", "March 22", "30th MArch"
+  const namedMatch = lower.match(
+    /(\d{1,2})(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/
+  );
+  const namedMatch2 = lower.match(
+    /(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})(?:st|nd|rd|th)?/
+  );
   const match = namedMatch || namedMatch2;
   if (match) {
     const day = parseInt(namedMatch ? match[1] : match[2]);
@@ -91,6 +105,19 @@ function parseDateHint(text: string, referenceDate: Date): string | null {
   }
 
   return null;
+}
+
+// Strip date phrases from a task title so "Do X by 30th March" → "Do X"
+function stripDateFromTitle(title: string): string {
+  return title
+    .replace(/\s+by\s+\d{1,2}(?:st|nd|rd|th)?\s+\w+/gi, "")
+    .replace(
+      /\s+by\s+(?:today|tomorrow|eod|end of day|next week|this week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)/gi,
+      ""
+    )
+    .replace(/\s+by\s+\d{4}-\d{2}-\d{2}/g, "")
+    .replace(/\s+by\s+\d{1,2}\s*(?:pm|am)/gi, "")
+    .trim();
 }
 
 function detectPriority(text: string): string {
@@ -164,7 +191,10 @@ export function mockExtractTasks(
 
     const ownerExtract = extractOwnerAndAction(cleaned);
     const owner = ownerExtract?.owner || "";
-    const title = ownerExtract?.title || capitalise(cleaned.replace(/^(action|todo|task):\s*/i, ""));
+    // Parse date from this line only (not the whole notes), then strip it from title
+    const dueDate = parseDateHint(line, meetingDate) || "";
+    const rawTitle = ownerExtract?.title || capitalise(cleaned.replace(/^(action|todo|task):\s*/i, ""));
+    const title = stripDateFromTitle(rawTitle) || rawTitle;
 
     // Deduplicate by title
     const key = title.toLowerCase().slice(0, 40);
@@ -173,7 +203,6 @@ export function mockExtractTasks(
 
     const priority = detectPriority(line);
     const fn = detectFunction(line) || detectFunction(meetingName);
-    const dueDate = parseDateHint(line + " " + notes.slice(0, 300), meetingDate) || "";
 
     tasks.push({
       title,

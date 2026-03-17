@@ -43,8 +43,8 @@ export default function MeetingNotesPage() {
     setError("");
     setSavedCount(null);
 
-    if (!meetingName || !meetingDate || !rawNotes.trim()) {
-      setError("Meeting name, date, and notes are required.");
+    if (!rawNotes.trim()) {
+      setError("Please paste your meeting notes.");
       return;
     }
 
@@ -60,10 +60,14 @@ export default function MeetingNotesPage() {
         throw new Error(d.error || "Extraction failed");
       }
       const data = await res.json();
+      // Sort tasks by owner name so same-owner tasks are grouped together
+      const sortedTasks = [...data.tasks].sort((a: ExtractedTask, b: ExtractedTask) =>
+        (a.ownerName || "").localeCompare(b.ownerName || "")
+      );
       setExtracted({
         meetingNoteId: data.meetingNoteId,
         provider: data.provider,
-        tasks: data.tasks.map((t: ExtractedTask, i: number) => ({
+        tasks: sortedTasks.map((t: ExtractedTask, i: number) => ({
           ...t,
           selected: true,
           _key: i,
@@ -161,7 +165,7 @@ export default function MeetingNotesPage() {
 
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">
-                Meeting Name <span className="text-red-500">*</span>
+                Meeting Name <span className="text-gray-400 font-normal">(optional)</span>
               </label>
               <input
                 value={meetingName}
