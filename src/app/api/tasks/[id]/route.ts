@@ -32,7 +32,7 @@ export async function PUT(
 ) {
   try {
     const body = await req.json();
-    const { title, description, owner, ownerPhone, function: fn, priority, dueDate, source, status, escalationLevel } = body;
+    const { title, description, owner, ownerPhone, ownerEmail, function: fn, priority, dueDate, source, status, escalationLevel } = body;
 
     const existing = await prisma.task.findUnique({ where: { id: params.id } });
     if (!existing) {
@@ -51,6 +51,7 @@ export async function PUT(
       updates.owner = owner;
     }
     if (ownerPhone !== undefined) updates.ownerPhone = ownerPhone;
+    if (ownerEmail !== undefined) updates.ownerEmail = ownerEmail || null;
     if (fn !== undefined) updates.function = fn;
     if (priority !== undefined) {
       if (priority !== existing.priority) {

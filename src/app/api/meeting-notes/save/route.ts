@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
           description: t.description || null,
           owner: t.ownerName || "Unassigned",
           ownerPhone: t.ownerPhone || "",
+          ownerEmail: t.ownerEmail || null,
           function: t.function || "",
           priority: t.priority || "MEDIUM",
           dueDate: due,

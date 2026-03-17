@@ -8,6 +8,7 @@ export interface Task {
   description?: string | null;
   owner: string;
   ownerPhone: string;
+  ownerEmail?: string | null;
   function: string;
   priority: Priority;
   dueDate: string;
@@ -51,6 +52,7 @@ export interface Reminder {
   channel: string;
   recipientName: string;
   recipientPhone: string;
+  recipientEmail?: string;
   provider: string;
   status: string;
   message: string;
@@ -110,6 +112,7 @@ export interface ExtractedTask {
   description: string;
   ownerName: string;
   ownerPhone: string;
+  ownerEmail: string;
   dueDate: string;
   priority: string;
   function: string;

@@ -9,6 +9,7 @@ interface TaskFormValues {
   description: string;
   owner: string;
   ownerPhone: string;
+  ownerEmail: string;
   function: string;
   priority: string;
   dueDate: string;
@@ -20,6 +21,7 @@ const defaultValues: TaskFormValues = {
   description: "",
   owner: "",
   ownerPhone: "",
+  ownerEmail: "",
   function: "",
   priority: "MEDIUM",
   dueDate: "",
@@ -47,8 +49,8 @@ export function TaskForm({ initialTitle = "" }: { initialTitle?: string }) {
     e.preventDefault();
     setError("");
 
-    if (!form.title || !form.owner || !form.ownerPhone || !form.function || !form.dueDate) {
-      setError("Please fill in all required fields.");
+    if (!form.title || !form.owner || !form.function || !form.dueDate || (!form.ownerPhone && !form.ownerEmail)) {
+      setError("Please fill in all required fields. At least one of WhatsApp or Email is required.");
       return;
     }
 
@@ -111,23 +113,26 @@ export function TaskForm({ initialTitle = "" }: { initialTitle?: string }) {
         />
       </div>
 
-      {/* Owner + Phone */}
+      {/* Owner */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Owner Name <span className="text-red-500">*</span>
+        </label>
+        <input
+          name="owner"
+          value={form.owner}
+          onChange={handleChange}
+          placeholder="e.g. Priya Sharma"
+          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+        />
+      </div>
+
+      {/* Phone + Email */}
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Owner Name <span className="text-red-500">*</span>
-          </label>
-          <input
-            name="owner"
-            value={form.owner}
-            onChange={handleChange}
-            placeholder="e.g. Priya Sharma"
-            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Owner Phone (WhatsApp) <span className="text-red-500">*</span>
+            WhatsApp Number
+            <span className="text-gray-400 font-normal text-xs ml-1">(for reminders)</span>
           </label>
           <input
             name="ownerPhone"
@@ -137,7 +142,22 @@ export function TaskForm({ initialTitle = "" }: { initialTitle?: string }) {
             className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
           />
         </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Email
+            <span className="text-gray-400 font-normal text-xs ml-1">(backup)</span>
+          </label>
+          <input
+            name="ownerEmail"
+            type="email"
+            value={form.ownerEmail}
+            onChange={handleChange}
+            placeholder="priya@company.com"
+            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+          />
+        </div>
       </div>
+      <p className="text-xs text-gray-400 -mt-3">At least one contact method required</p>
 
       {/* Function + Priority */}
       <div className="grid grid-cols-2 gap-4">

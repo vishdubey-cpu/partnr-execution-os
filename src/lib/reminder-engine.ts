@@ -5,6 +5,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { sendEmailReminder } from "@/lib/email";
 import {
   sendWhatsAppMessage,
   hasReminderBeenSentToday,
@@ -60,6 +61,29 @@ async function getManagerInfo(
   return null;
 }
 
+
+/** Send via WhatsApp if phone exists, email if email exists (or both) */
+async function notifyOwner(
+  type: Parameters<typeof sendWhatsAppMessage>[0] & import("@/lib/email").EmailReminderType,
+  taskId: string,
+  ownerPhone: string,
+  ownerEmail: string | null | undefined,
+  ownerName: string,
+  taskData: Parameters<typeof sendWhatsAppMessage>[4],
+  extra?: Record<string, string>
+): Promise<number> {
+  let sent = 0;
+  if (ownerPhone) {
+    await sendWhatsAppMessage(type, taskId, ownerPhone, ownerName, taskData, extra);
+    sent++;
+  }
+  if (ownerEmail) {
+    await sendEmailReminder(type, taskId, ownerEmail, ownerName, taskData, extra);
+    sent++;
+  }
+  return sent;
+}
+
 export async function processReminders(): Promise<ReminderJobResult> {
   const result: ReminderJobResult = {
     tasks_checked: 0,
@@ -92,7 +116,7 @@ export async function processReminders(): Promise<ReminderJobResult> {
       // ── Due in 2 days ──────────────────────────────────────────
       if (daysUntilDue === 2) {
         if (!(await hasReminderBeenSentToday(task.id, "due_in_2_days"))) {
-          await sendWhatsAppMessage("due_in_2_days", task.id, task.ownerPhone, task.owner, taskData);
+          await notifyOwner("due_in_2_days", task.id, task.ownerPhone, task.ownerEmail, task.owner, taskData);
           await prisma.activity.create({
             data: { taskId: task.id, type: "REMINDER_SENT", actor: "system", message: "Reminder sent: due in 2 days" },
           });
@@ -104,7 +128,7 @@ export async function processReminders(): Promise<ReminderJobResult> {
       // ── Due today ─────────────────────────────────────────────
       else if (daysUntilDue === 0 || (daysUntilDue < 0 && daysUntilDue > -1)) {
         if (!(await hasReminderBeenSentToday(task.id, "due_today"))) {
-          await sendWhatsAppMessage("due_today", task.id, task.ownerPhone, task.owner, taskData);
+          await notifyOwner("due_today", task.id, task.ownerPhone, task.ownerEmail, task.owner, taskData);
           await prisma.activity.create({
             data: { taskId: task.id, type: "REMINDER_SENT", actor: "system", message: "Reminder sent: due today" },
           });
@@ -123,7 +147,7 @@ export async function processReminders(): Promise<ReminderJobResult> {
           });
         }
         if (!(await hasReminderBeenSentToday(task.id, "overdue_1_day"))) {
-          await sendWhatsAppMessage("overdue_1_day", task.id, task.ownerPhone, task.owner, taskData);
+          await notifyOwner("overdue_1_day", task.id, task.ownerPhone, task.ownerEmail, task.owner, taskData);
           await prisma.activity.create({
             data: { taskId: task.id, type: "REMINDER_SENT", actor: "system", message: `Reminder sent: overdue by ${daysOverdue} day(s)` },
           });

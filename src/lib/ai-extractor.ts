@@ -209,6 +209,7 @@ export function mockExtractTasks(
       description: `Extracted from: ${meetingName} (${meetingDate.toDateString()})`,
       ownerName: owner,
       ownerPhone: "",
+      ownerEmail: "",
       dueDate,
       priority,
       function: fn,

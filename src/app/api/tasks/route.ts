@@ -40,11 +40,11 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { title, description, owner, ownerPhone, function: fn, priority, dueDate, source } = body;
+    const { title, description, owner, ownerPhone, ownerEmail, function: fn, priority, dueDate, source } = body;
 
-    if (!title || !owner || !ownerPhone || !fn || !dueDate) {
+    if (!title || !owner || !fn || !dueDate || (!ownerPhone && !ownerEmail)) {
       return NextResponse.json(
-        { error: "title, owner, ownerPhone, function, and dueDate are required" },
+        { error: "title, owner, function, dueDate, and at least one of ownerPhone or ownerEmail are required" },
         { status: 400 }
       );
     }
@@ -58,6 +58,7 @@ export async function POST(req: NextRequest) {
         title,
         description: description || null,
         owner,
+        ownerEmail: ownerEmail || null,
         ownerPhone,
         function: fn,
         priority: priority || "MEDIUM",

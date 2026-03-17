@@ -286,18 +286,28 @@ export default function HomePage() {
                       </div>
                     </div>
 
-                    {/* Phone — only show if owner has a name */}
+                    {/* Phone + Email — only show if owner has a name */}
                     {task.ownerName && (
-                      <div>
-                        <label className="block text-xs text-gray-400 mb-0.5">
-                          {task.ownerName}&apos;s WhatsApp number
-                        </label>
-                        <input
-                          value={task.ownerPhone}
-                          onChange={(e) => updateTask(task._key, "ownerPhone", e.target.value)}
-                          placeholder="+919876543210"
-                          className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
-                        />
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-xs text-gray-400 mb-0.5">WhatsApp</label>
+                          <input
+                            value={task.ownerPhone}
+                            onChange={(e) => updateTask(task._key, "ownerPhone", e.target.value)}
+                            placeholder="+919876543210"
+                            className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-400 mb-0.5">Email <span className="text-gray-300">(backup)</span></label>
+                          <input
+                            type="email"
+                            value={task.ownerEmail || ""}
+                            onChange={(e) => updateTask(task._key, "ownerEmail", e.target.value)}
+                            placeholder="priya@company.com"
+                            className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                          />
+                        </div>
                       </div>
                     )}
                   </div>

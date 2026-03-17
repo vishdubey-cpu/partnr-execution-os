@@ -24,7 +24,8 @@ model Task {
   title            String
   description      String?
   owner            String
-  ownerPhone       String
+  ownerPhone       String    @default("")
+  ownerEmail       String?
   function         String
   priority         String    @default("MEDIUM")
   dueDate          DateTime
@@ -69,9 +70,10 @@ model Reminder {
   taskId         String
   task           Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
   type           String   @default("MANUAL")
-  channel        String   @default("WHATSAPP")
+  channel        String   @default("WHATSAPP") // WHATSAPP | EMAIL
   recipientName  String   @default("")
   recipientPhone String   @default("")
+  recipientEmail String   @default("")
   provider       String   @default("MOCK")
   status         String   @default("SENT")
   message        String

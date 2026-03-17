@@ -289,7 +289,7 @@ export default function MeetingNotesPage() {
                         </div>
 
                         {/* Row: Owner, Phone, Due, Priority, Function */}
-                        <div className="grid grid-cols-5 gap-2">
+                        <div className="grid grid-cols-6 gap-2">
                           <div>
                             <label className="block text-xs text-gray-400 mb-0.5">Owner</label>
                             <input
@@ -300,11 +300,21 @@ export default function MeetingNotesPage() {
                             />
                           </div>
                           <div>
-                            <label className="block text-xs text-gray-400 mb-0.5">Phone</label>
+                            <label className="block text-xs text-gray-400 mb-0.5">WhatsApp</label>
                             <input
                               value={task.ownerPhone}
                               onChange={(e) => updateTask(task._key, "ownerPhone", e.target.value)}
                               placeholder="+91..."
+                              className="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-400 mb-0.5">Email <span className="text-gray-300">(backup)</span></label>
+                            <input
+                              type="email"
+                              value={task.ownerEmail || ""}
+                              onChange={(e) => updateTask(task._key, "ownerEmail", e.target.value)}
+                              placeholder="name@co.com"
                               className="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
                             />
                           </div>
