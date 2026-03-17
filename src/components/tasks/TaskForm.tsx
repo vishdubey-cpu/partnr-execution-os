@@ -26,9 +26,12 @@ const defaultValues: TaskFormValues = {
   source: "",
 };
 
-export function TaskForm() {
+export function TaskForm({ initialTitle = "" }: { initialTitle?: string }) {
   const router = useRouter();
-  const [form, setForm] = useState<TaskFormValues>(defaultValues);
+  const [form, setForm] = useState<TaskFormValues>({
+    ...defaultValues,
+    title: initialTitle,
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ExtractedTask } from "@/types";
 import { FUNCTIONS, SOURCES } from "@/lib/utils";
@@ -21,6 +21,15 @@ export default function MeetingNotesPage() {
     new Date().toISOString().split("T")[0]
   );
   const [rawNotes, setRawNotes] = useState("");
+
+  // Pick up notes pre-filled from the home capture box
+  useEffect(() => {
+    const pending = sessionStorage.getItem("pendingNotes");
+    if (pending) {
+      setRawNotes(pending);
+      sessionStorage.removeItem("pendingNotes");
+    }
+  }, []);
 
   // UI state
   const [extracting, setExtracting] = useState(false);

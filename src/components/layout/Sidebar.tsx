@@ -14,7 +14,8 @@ import {
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { label: "Dashboard", href: "/", icon: LayoutDashboard },
+  { label: "Home", href: "/", icon: Zap },
+  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "All Tasks", href: "/tasks", icon: CheckSquare },
   { label: "New Task", href: "/tasks/new", icon: PlusCircle },
   { label: "Overdue", href: "/overdue", icon: AlertTriangle },
