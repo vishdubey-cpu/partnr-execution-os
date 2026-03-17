@@ -1,0 +1,88 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { isBefore } from "date-fns";
+
+/**
+ * POST /api/meeting-notes/save
+ *
+ * Saves approved extracted tasks into the database.
+ * Body: {
+ *   meetingNoteId: string,
+ *   meetingName: string,
+ *   meetingDate: string,
+ *   tasks: Array<ExtractedTask & { selected: boolean }>
+ * }
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { meetingNoteId, meetingName, meetingDate, tasks } = body;
+
+    if (!Array.isArray(tasks)) {
+      return NextResponse.json({ error: "tasks must be an array" }, { status: 400 });
+    }
+
+    const selectedTasks = tasks.filter((t: { selected?: boolean }) => t.selected !== false);
+
+    if (selectedTasks.length === 0) {
+      return NextResponse.json({ error: "No tasks selected" }, { status: 400 });
+    }
+
+    const createdTasks = [];
+    const now = new Date();
+
+    for (const t of selectedTasks) {
+      if (!t.title) continue;
+
+      const due = t.dueDate ? new Date(t.dueDate) : null;
+      if (!due || isNaN(due.getTime())) {
+        // Skip tasks with no valid due date — require it
+        continue;
+      }
+
+      const status = isBefore(due, now) ? "OVERDUE" : "OPEN";
+
+      const task = await prisma.task.create({
+        data: {
+          title: t.title,
+          description: t.description || null,
+          owner: t.ownerName || "Unassigned",
+          ownerPhone: t.ownerPhone || "",
+          function: t.function || "",
+          priority: t.priority || "MEDIUM",
+          dueDate: due,
+          source: `${meetingName}${meetingDate ? ` (${new Date(meetingDate).toDateString()})` : ""}`,
+          status,
+          activities: {
+            create: [
+              {
+                type: "CREATED",
+                actor: "system",
+                message: `Task extracted from meeting: ${meetingName}`,
+              },
+            ],
+          },
+        },
+      });
+      createdTasks.push(task);
+    }
+
+    // Update meeting note to mark as saved
+    if (meetingNoteId) {
+      await prisma.meetingNote.update({
+        where: { id: meetingNoteId },
+        data: { extractedJson: JSON.stringify(tasks) },
+      });
+    }
+
+    return NextResponse.json({
+      saved: createdTasks.length,
+      skipped: selectedTasks.length - createdTasks.length,
+      taskIds: createdTasks.map((t) => t.id),
+    });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error("[meeting-notes/save] Error:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}

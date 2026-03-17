@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  phone        String   @unique
+  role         String   @default("MEMBER") // CEO | HEAD | MANAGER | CLUSTER_MANAGER | MEMBER
+  function     String   @default("")
+  managerName  String?
+  managerPhone String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Task {
+  id               String    @id @default(cuid())
+  title            String
+  description      String?
+  owner            String
+  ownerPhone       String
+  function         String
+  priority         String    @default("MEDIUM")
+  dueDate          DateTime
+  source           String?
+  status           String    @default("OPEN")
+  escalationLevel  Int       @default(0)
+  escalationStatus String    @default("NONE") // NONE | LEVEL1 | LEVEL2
+  lastEscalatedAt  DateTime?
+  closedAt         DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  activities Activity[]
+  comments   Comment[]
+  reminders  Reminder[]
+}
+
+model Activity {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  type      String
+  action    String?
+  actor     String?
+  message   String
+  notes     String?
+  metadata  String?
+  createdAt DateTime @default(now())
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author    String
+  content   String
+  createdAt DateTime @default(now())
+}
+
+model Reminder {
+  id             String   @id @default(cuid())
+  taskId         String
+  task           Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  type           String   @default("MANUAL")
+  channel        String   @default("WHATSAPP")
+  recipientName  String   @default("")
+  recipientPhone String   @default("")
+  provider       String   @default("MOCK")
+  status         String   @default("SENT")
+  message        String
+  metadata       String?
+  sentAt         DateTime @default(now())
+}
+
+model MeetingNote {
+  id            String   @id @default(cuid())
+  meetingName   String
+  meetingDate   DateTime
+  rawNotes      String
+  extractedJson String?
+  createdAt     DateTime @default(now())
+}

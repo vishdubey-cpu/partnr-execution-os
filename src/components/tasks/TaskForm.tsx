@@ -1,0 +1,230 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { FUNCTIONS, SOURCES } from "@/lib/utils";
+
+interface TaskFormValues {
+  title: string;
+  description: string;
+  owner: string;
+  ownerPhone: string;
+  function: string;
+  priority: string;
+  dueDate: string;
+  source: string;
+}
+
+const defaultValues: TaskFormValues = {
+  title: "",
+  description: "",
+  owner: "",
+  ownerPhone: "",
+  function: "",
+  priority: "MEDIUM",
+  dueDate: "",
+  source: "",
+};
+
+export function TaskForm() {
+  const router = useRouter();
+  const [form, setForm] = useState<TaskFormValues>(defaultValues);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  function handleChange(
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >
+  ) {
+    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+
+    if (!form.title || !form.owner || !form.ownerPhone || !form.function || !form.dueDate) {
+      setError("Please fill in all required fields.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to create task");
+      }
+
+      const task = await res.json();
+      router.push(`/tasks/${task.id}`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-5">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded">
+          {error}
+        </div>
+      )}
+
+      {/* Title */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Task Title <span className="text-red-500">*</span>
+        </label>
+        <input
+          name="title"
+          value={form.title}
+          onChange={handleChange}
+          placeholder="e.g. Finalize Q2 hiring plan"
+          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+        />
+      </div>
+
+      {/* Description */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Description
+        </label>
+        <textarea
+          name="description"
+          value={form.description}
+          onChange={handleChange}
+          rows={3}
+          placeholder="Additional context or details..."
+          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-none"
+        />
+      </div>
+
+      {/* Owner + Phone */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Owner Name <span className="text-red-500">*</span>
+          </label>
+          <input
+            name="owner"
+            value={form.owner}
+            onChange={handleChange}
+            placeholder="e.g. Priya Sharma"
+            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Owner Phone (WhatsApp) <span className="text-red-500">*</span>
+          </label>
+          <input
+            name="ownerPhone"
+            value={form.ownerPhone}
+            onChange={handleChange}
+            placeholder="+919876543210"
+            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+          />
+        </div>
+      </div>
+
+      {/* Function + Priority */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Function <span className="text-red-500">*</span>
+          </label>
+          <select
+            name="function"
+            value={form.function}
+            onChange={handleChange}
+            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+          >
+            <option value="">Select function...</option>
+            {FUNCTIONS.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Priority
+          </label>
+          <select
+            name="priority"
+            value={form.priority}
+            onChange={handleChange}
+            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+          >
+            <option value="LOW">Low</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="HIGH">High</option>
+            <option value="CRITICAL">Critical</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Due Date + Source */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Due Date <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="date"
+            name="dueDate"
+            value={form.dueDate}
+            onChange={handleChange}
+            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Source
+          </label>
+          <select
+            name="source"
+            value={form.source}
+            onChange={handleChange}
+            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+          >
+            <option value="">Select source...</option>
+            {SOURCES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Submit */}
+      <div className="flex items-center gap-3 pt-2">
+        <button
+          type="submit"
+          disabled={loading}
+          className="bg-indigo-600 text-white px-5 py-2 rounded text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {loading ? "Creating..." : "Create Task"}
+        </button>
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="text-sm text-gray-500 hover:text-gray-700"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}

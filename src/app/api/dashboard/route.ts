@@ -1,0 +1,112 @@
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { isToday, isBefore } from "date-fns";
+
+export async function GET() {
+  try {
+    const now = new Date();
+
+    const allTasks = await prisma.task.findMany({
+      orderBy: { createdAt: "desc" },
+    });
+
+    const totalOpenTasks = allTasks.filter(
+      (t) => t.status === "OPEN" || t.status === "DELAYED"
+    ).length;
+
+    const overdueTasks = allTasks.filter(
+      (t) => t.status === "OVERDUE" || (t.status !== "DONE" && isBefore(new Date(t.dueDate), now))
+    ).length;
+
+    const dueTodayTasks = allTasks.filter(
+      (t) => t.status !== "DONE" && isToday(new Date(t.dueDate))
+    ).length;
+
+    const doneTasks = allTasks.filter((t) => t.status === "DONE");
+    const onTimeDone = doneTasks.filter(
+      (t) => t.closedAt && !isBefore(new Date(t.dueDate), new Date(t.closedAt))
+    ).length;
+    const onTimeClosureRate =
+      doneTasks.length > 0
+        ? Math.round((onTimeDone / doneTasks.length) * 100)
+        : 0;
+
+    // Build owner stats
+    const ownerMap: Record<string, { function: string; tasks: typeof allTasks }> = {};
+    for (const task of allTasks) {
+      if (!ownerMap[task.owner]) {
+        ownerMap[task.owner] = { function: task.function, tasks: [] };
+      }
+      ownerMap[task.owner].tasks.push(task);
+    }
+
+    const ownerStats = Object.entries(ownerMap).map(([owner, data]) => {
+      const tasks = data.tasks;
+      const done = tasks.filter((t) => t.status === "DONE").length;
+      const overdue = tasks.filter(
+        (t) => t.status === "OVERDUE" || (t.status !== "DONE" && isBefore(new Date(t.dueDate), now))
+      ).length;
+      const delayed = tasks.filter((t) => t.status === "DELAYED").length;
+      const open = tasks.filter((t) => t.status === "OPEN").length;
+      const closureRate =
+        tasks.length > 0 ? Math.round((done / tasks.length) * 100) : 0;
+      return {
+        owner,
+        function: data.function,
+        total: tasks.length,
+        open,
+        done,
+        overdue,
+        delayed,
+        closureRate,
+      };
+    });
+
+    ownerStats.sort((a, b) => b.total - a.total);
+
+    const overdueTasksSummary = allTasks
+      .filter(
+        (t) =>
+          t.status === "OVERDUE" ||
+          (t.status !== "DONE" && isBefore(new Date(t.dueDate), now))
+      )
+      .sort(
+        (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+      )
+      .slice(0, 10);
+
+    const recentTasks = allTasks.slice(0, 8);
+
+    // Tasks needing escalation: overdue 3+ days, escalationLevel still 0
+    const needsEscalation = allTasks
+      .filter((t) => {
+        if (t.status === "DONE") return false;
+        const daysOverdue = Math.floor((now.getTime() - new Date(t.dueDate).getTime()) / (1000 * 60 * 60 * 24));
+        return daysOverdue >= 3 && t.escalationLevel < 1;
+      })
+      .slice(0, 6);
+
+    // Recent reminders sent
+    const recentReminders = await prisma.reminder.findMany({
+      where: { type: { not: "INBOUND_REPLY" } },
+      orderBy: { sentAt: "desc" },
+      take: 8,
+      include: { task: { select: { title: true, owner: true } } },
+    });
+
+    return NextResponse.json({
+      totalOpenTasks,
+      overdueTasks,
+      dueTodayTasks,
+      onTimeClosureRate,
+      ownerStats,
+      recentTasks,
+      overdueTasksSummary,
+      needsEscalation,
+      recentReminders,
+    });
+  } catch (error) {
+    console.error("Dashboard error:", error);
+    return NextResponse.json({ error: "Failed to load dashboard" }, { status: 500 });
+  }
+}
