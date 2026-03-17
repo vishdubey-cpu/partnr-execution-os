@@ -2,28 +2,47 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, ArrowRight } from "lucide-react";
+import { Sparkles, ArrowRight, ArrowLeft, Save, CheckCircle2, AlertCircle } from "lucide-react";
+import { ExtractedTask } from "@/types";
+
+// ── Types ──────────────────────────────────────────────────────────────
 
 interface PressureItem {
   id: string;
   title: string;
   owner: string;
-  dueDate: string;
   daysOverdue: number;
 }
 
 interface HomeData {
   overdueItems: PressureItem[];
   dueTodayCount: number;
-  totalOpen: number;
 }
+
+type ExtractedRow = ExtractedTask & { selected: boolean; _key: number };
+
+type PageState = "capture" | "extracting" | "review" | "saving" | "saved";
+
+// ── Component ──────────────────────────────────────────────────────────
 
 export default function HomePage() {
   const router = useRouter();
-  const [input, setInput] = useState("");
-  const [data, setData] = useState<HomeData | null>(null);
-  const [loading, setLoading] = useState(true);
 
+  // Capture
+  const [input, setInput] = useState("");
+
+  // Pressure radar
+  const [pressureData, setPressureData] = useState<HomeData | null>(null);
+  const [pressureLoading, setPressureLoading] = useState(true);
+
+  // Extraction flow
+  const [pageState, setPageState] = useState<PageState>("capture");
+  const [extractedTasks, setExtractedTasks] = useState<ExtractedRow[]>([]);
+  const [meetingNoteId, setMeetingNoteId] = useState("");
+  const [savedCount, setSavedCount] = useState(0);
+  const [error, setError] = useState("");
+
+  // Load pressure radar data
   useEffect(() => {
     fetch("/api/dashboard", { cache: "no-store" })
       .then((r) => r.json())
@@ -36,39 +55,277 @@ export default function HomePage() {
             id: t.id,
             title: t.title,
             owner: t.owner,
-            dueDate: t.dueDate,
             daysOverdue: Math.floor(
               (now - new Date(t.dueDate).getTime()) / (1000 * 60 * 60 * 24)
             ),
           }));
-        setData({
+        setPressureData({
           overdueItems,
           dueTodayCount: d.dueTodayTasks || 0,
-          totalOpen: d.totalOpenTasks || 0,
         });
       })
-      .catch(() => setData(null))
-      .finally(() => setLoading(false));
+      .catch(() => setPressureData(null))
+      .finally(() => setPressureLoading(false));
   }, []);
+
+  // ── Extraction ───────────────────────────────────────────────────────
+
+  async function runExtraction(notes: string) {
+    setError("");
+    setPageState("extracting");
+    try {
+      const res = await fetch("/api/meeting-notes/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rawNotes: notes,
+          meetingDate: new Date().toISOString().split("T")[0],
+        }),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        throw new Error(d.error || "Extraction failed");
+      }
+      const data = await res.json();
+      const sorted = [...data.tasks].sort((a: ExtractedTask, b: ExtractedTask) =>
+        (a.ownerName || "").localeCompare(b.ownerName || "")
+      );
+      setMeetingNoteId(data.meetingNoteId);
+      setExtractedTasks(
+        sorted.map((t: ExtractedTask, i: number) => ({
+          ...t,
+          selected: true,
+          _key: i,
+        }))
+      );
+      setPageState("review");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Extraction failed");
+      setPageState("capture");
+    }
+  }
 
   function handleCapture() {
     if (!input.trim()) return;
-    const isLong =
-      input.trim().split("\n").length > 2 || input.length > 150;
+    const isLong = input.trim().split("\n").length > 2 || input.length > 150;
     if (isLong) {
-      sessionStorage.setItem("pendingNotes", input.trim());
-      router.push("/meeting-notes");
+      runExtraction(input.trim());
     } else {
       router.push(`/tasks/new?title=${encodeURIComponent(input.trim())}`);
     }
   }
 
+  function updateTask(key: number, field: string, value: string | boolean) {
+    setExtractedTasks((prev) =>
+      prev.map((t) => (t._key === key ? { ...t, [field]: value } : t))
+    );
+  }
+
+  async function handleSave() {
+    const selected = extractedTasks.filter((t) => t.selected);
+    if (selected.length === 0) return;
+    setPageState("saving");
+    setError("");
+    try {
+      const res = await fetch("/api/meeting-notes/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          meetingNoteId,
+          meetingName: "",
+          meetingDate: new Date().toISOString().split("T")[0],
+          tasks: selected,
+        }),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        throw new Error(d.error || "Save failed");
+      }
+      const result = await res.json();
+      setSavedCount(result.saved);
+      setPageState("saved");
+      setTimeout(() => {
+        setInput("");
+        setExtractedTasks([]);
+        setPageState("capture");
+      }, 2000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Save failed");
+      setPageState("review");
+    }
+  }
+
+  // ── Helpers ──────────────────────────────────────────────────────────
+
   const hour = new Date().getHours();
   const greeting =
     hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
-  const isLong =
-    input.trim().split("\n").length > 2 || input.length > 150;
+  const isLong = input.trim().split("\n").length > 2 || input.length > 150;
+  const selectedCount = extractedTasks.filter((t) => t.selected).length;
 
+  // ── Render ───────────────────────────────────────────────────────────
+
+  // ── SAVED confirmation ───────────────────────────────────────────────
+  if (pageState === "saved") {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <CheckCircle2 size={40} className="text-green-500 mx-auto mb-3" />
+          <p className="text-lg font-semibold text-gray-800">
+            {savedCount} task{savedCount !== 1 ? "s" : ""} saved
+          </p>
+          <p className="text-sm text-gray-400 mt-1">Returning to home…</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── EXTRACTING loading state ──────────────────────────────────────────
+  if (pageState === "extracting") {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Sparkles size={32} className="text-indigo-400 mx-auto mb-3 animate-pulse" />
+          <p className="text-sm font-medium text-gray-600">Extracting tasks…</p>
+          <p className="text-xs text-gray-400 mt-1">Reading your notes</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── REVIEW extracted tasks ────────────────────────────────────────────
+  if (pageState === "review" || pageState === "saving") {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="max-w-2xl mx-auto px-6 pt-10 pb-12">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <button
+                onClick={() => setPageState("capture")}
+                className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 mb-2 transition-colors"
+              >
+                <ArrowLeft size={12} /> Back
+              </button>
+              <h2 className="text-lg font-semibold text-gray-900">
+                {extractedTasks.length} tasks extracted
+              </h2>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Review and fix, then save — {selectedCount} selected
+              </p>
+            </div>
+            <button
+              onClick={handleSave}
+              disabled={pageState === "saving" || selectedCount === 0}
+              className="flex items-center gap-2 bg-green-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <Save size={14} />
+              {pageState === "saving"
+                ? "Saving…"
+                : `Save ${selectedCount} Task${selectedCount !== 1 ? "s" : ""}`}
+            </button>
+          </div>
+
+          {error && (
+            <div className="mb-4 flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">
+              <AlertCircle size={14} />
+              {error}
+            </div>
+          )}
+
+          {/* Task list */}
+          <div className="space-y-3">
+            {extractedTasks.map((task) => (
+              <div
+                key={task._key}
+                className={`bg-white rounded-xl border px-4 py-4 transition-all ${
+                  task.selected ? "border-gray-200" : "border-gray-100 opacity-50"
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  {/* Checkbox */}
+                  <input
+                    type="checkbox"
+                    checked={task.selected}
+                    onChange={(e) => updateTask(task._key, "selected", e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 cursor-pointer"
+                  />
+
+                  <div className="flex-1 space-y-2.5">
+                    {/* Title */}
+                    <input
+                      value={task.title}
+                      onChange={(e) => updateTask(task._key, "title", e.target.value)}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    />
+
+                    {/* Owner + Due Date — the two fields that matter */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-0.5">Owner</label>
+                        <input
+                          value={task.ownerName}
+                          onChange={(e) => updateTask(task._key, "ownerName", e.target.value)}
+                          placeholder="Owner name"
+                          className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-0.5">
+                          Due Date{" "}
+                          {!task.dueDate && (
+                            <span className="text-amber-500">· not detected</span>
+                          )}
+                        </label>
+                        <input
+                          type="date"
+                          value={task.dueDate}
+                          onChange={(e) => updateTask(task._key, "dueDate", e.target.value)}
+                          className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Phone — only show if owner has a name */}
+                    {task.ownerName && (
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-0.5">
+                          {task.ownerName}&apos;s WhatsApp number
+                        </label>
+                        <input
+                          value={task.ownerPhone}
+                          onChange={(e) => updateTask(task._key, "ownerPhone", e.target.value)}
+                          placeholder="+919876543210"
+                          className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Bottom save bar */}
+          <div className="mt-5 flex items-center justify-between">
+            <p className="text-xs text-gray-400">
+              Tasks without a due date will be skipped when saving
+            </p>
+            <button
+              onClick={handleSave}
+              disabled={pageState === "saving" || selectedCount === 0}
+              className="flex items-center gap-2 bg-green-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <Save size={14} />
+              {pageState === "saving" ? "Saving…" : `Save ${selectedCount} Tasks`}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── CAPTURE (default home) ────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-2xl mx-auto px-6 pt-14 pb-12">
@@ -86,7 +343,15 @@ export default function HomePage() {
           </p>
         </div>
 
-        {/* Capture Box — thought catcher */}
+        {/* Error */}
+        {error && (
+          <div className="mb-4 flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">
+            <AlertCircle size={14} />
+            {error}
+          </div>
+        )}
+
+        {/* Capture Box */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm mb-8">
           <textarea
             value={input}
@@ -120,23 +385,21 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Pressure Radar — what's burning */}
+        {/* Pressure Radar */}
         <div className="mb-8">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">
             needs your attention
           </p>
 
-          {loading ? (
+          {pressureLoading ? (
             <div className="space-y-2">
               {[1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className="h-[62px] bg-gray-100 rounded-xl animate-pulse"
-                />
+                <div key={i} className="h-[62px] bg-gray-100 rounded-xl animate-pulse" />
               ))}
             </div>
-          ) : !data ||
-            (data.overdueItems.length === 0 && data.dueTodayCount === 0) ? (
+          ) : !pressureData ||
+            (pressureData.overdueItems.length === 0 &&
+              pressureData.dueTodayCount === 0) ? (
             <div className="bg-white rounded-xl border border-gray-100 px-5 py-8 text-center">
               <p className="text-sm text-gray-400">Nothing urgent right now</p>
               <p className="text-xs text-gray-300 mt-1">
@@ -145,7 +408,7 @@ export default function HomePage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {data.overdueItems.map((item) => (
+              {pressureData.overdueItems.map((item) => (
                 <a
                   key={item.id}
                   href={`/tasks/${item.id}`}
@@ -174,7 +437,7 @@ export default function HomePage() {
                 </a>
               ))}
 
-              {data.dueTodayCount > 0 && (
+              {pressureData.dueTodayCount > 0 && (
                 <a
                   href="/tasks"
                   className="flex items-center justify-between bg-white rounded-xl border border-amber-100 px-4 py-3.5 hover:bg-amber-50 transition-all group"
@@ -183,8 +446,8 @@ export default function HomePage() {
                     <span className="text-base">🟡</span>
                     <p className="text-sm text-gray-700">
                       <span className="font-medium">
-                        {data.dueTodayCount} task
-                        {data.dueTodayCount > 1 ? "s" : ""}
+                        {pressureData.dueTodayCount} task
+                        {pressureData.dueTodayCount > 1 ? "s" : ""}
                       </span>{" "}
                       due today
                     </p>
@@ -206,7 +469,7 @@ export default function HomePage() {
             className="text-xs text-indigo-500 hover:text-indigo-700 font-medium flex items-center gap-1.5 transition-colors"
           >
             <Sparkles size={11} />
-            Extract from meeting notes
+            Full meeting notes editor
           </a>
           <a
             href="/dashboard"
