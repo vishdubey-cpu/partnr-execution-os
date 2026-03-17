@@ -37,7 +37,13 @@ const PRIORITY_KEYWORDS = {
   LOW: ["low", "when possible", "nice to have"],
 };
 
-const ACTION_WORDS = ["to ", "will ", "should ", "must ", "needs to ", "need to ", "has to ", "have to ", "action:"];
+const ACTION_WORDS = [
+  "to ", "will ", "should ", "must ", "needs to ", "need to ", "has to ", "have to ", "action:",
+  "send ", "prepare ", "review ", "update ", "submit ", "check ", "fix ", "complete ",
+  "ensure ", "follow up", "deploy ", "create ", "build ", "test ", "launch ", "share ",
+  "coordinate ", "confirm ", "arrange ", "draft ", "finalize ", "present ", "schedule ",
+  "call ", "email ", "connect ", "discuss ", "handle ", "manage ", "own ", "lead ",
+];
 
 // ── Date helpers ──────────────────────────────────────────────────
 
@@ -138,18 +144,32 @@ function detectFunction(text: string): string {
 }
 
 function extractOwnerAndAction(line: string): { owner: string; title: string } | null {
-  // Pattern: "Name will/to/should do X"
-  const match = line.match(
+  // Pattern 1: "Name will/to/should do X" at start of line
+  const startMatch = line.match(
     /^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+(to|will|should|must|needs? to|has? to)\s+(.+)/
   );
-  if (match) {
-    return { owner: match[1], title: capitalise(match[3]) };
+  if (startMatch) {
+    return { owner: startMatch[1], title: capitalise(startMatch[3]) };
   }
 
-  // Pattern: "Action: Name - Do X"
+  // Pattern 2: Mid-sentence "... Name will/to/should do X" (e.g. "We agreed that Ravi will send...")
+  const midMatch = line.match(
+    /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+(will|should|must|needs to|need to|has to|have to)\s+(.{6,})/
+  );
+  if (midMatch) {
+    return { owner: midMatch[1], title: capitalise(midMatch[3]) };
+  }
+
+  // Pattern 3: "Action: Name - Do X" or "Action: Do X"
   const actionMatch = line.match(/^(?:action|todo|task):\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)[\s\-–:]+(.+)/i);
   if (actionMatch) {
     return { owner: actionMatch[1], title: capitalise(actionMatch[2]) };
+  }
+
+  // Pattern 4: "Name: Do X" (simple colon pattern like "Rahul: send deck by Friday")
+  const colonMatch = line.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?):\s+(.{6,})/);
+  if (colonMatch) {
+    return { owner: colonMatch[1], title: capitalise(colonMatch[2]) };
   }
 
   return null;
@@ -175,10 +195,25 @@ export function mockExtractTasks(
   meetingName: string,
   meetingDate: Date
 ): ExtractedTask[] {
-  const lines = notes
+  // Step 1: split by newlines
+  const rawLines = notes
     .split("\n")
     .map((l) => l.trim())
     .filter((l) => l.length > 8);
+
+  // Step 2: for prose lines (no bullet/list marker), also split by sentence boundary
+  // This handles "Ravi will send deck. Priya will fix dashboard." as a single line
+  const lines: string[] = [];
+  for (const raw of rawLines) {
+    const isBullet = /^[-*•\d.]/.test(raw) || /^(action|todo|task):/i.test(raw);
+    if (isBullet) {
+      lines.push(raw);
+    } else {
+      // Split on ". " or "; " — keeps sentence-ending punctuation attached to previous word
+      const sentences = raw.split(/\.\s+|;\s+/).map((s) => s.trim()).filter((s) => s.length > 8);
+      lines.push(...(sentences.length > 1 ? sentences : [raw]));
+    }
+  }
 
   const tasks: ExtractedTask[] = [];
   const seen = new Set<string>();
