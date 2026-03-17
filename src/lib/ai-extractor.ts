@@ -9,6 +9,7 @@ export interface ExtractedTask {
   description: string;
   ownerName: string;
   ownerPhone: string;
+  ownerEmail: string;
   dueDate: string;
   priority: string;
   function: string;
@@ -244,6 +245,7 @@ Return a JSON array of tasks. Each task must have:
 - description (string, context from notes)
 - ownerName (string, person responsible — empty string if unclear)
 - ownerPhone (string, always empty string)
+- ownerEmail (string, always empty string)
 - dueDate (string, ISO format YYYY-MM-DD — empty string if unclear)
 - priority (string: LOW | MEDIUM | HIGH | CRITICAL)
 - function (string: HR | Sales | Operations | Finance | Technology | Strategy | Marketing | empty)
