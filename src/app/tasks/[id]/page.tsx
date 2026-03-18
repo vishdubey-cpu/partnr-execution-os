@@ -11,6 +11,7 @@ import {
   formatDateTime,
   getDaysOverdue,
   timeAgo,
+  FUNCTIONS,
 } from "@/lib/utils";
 import {
   ArrowLeft,
@@ -27,8 +28,19 @@ import {
   MessageCircle,
   ArrowUpCircle,
   Bell,
+  Pencil,
 } from "lucide-react";
 import Link from "next/link";
+
+interface EditForm {
+  title: string;
+  owner: string;
+  dueDate: string;
+  ownerPhone: string;
+  ownerEmail: string;
+  function: string;
+  priority: string;
+}
 
 export default function TaskDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -40,6 +52,19 @@ export default function TaskDetailPage() {
   const [submittingComment, setSubmittingComment] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [fetchError, setFetchError] = useState(false);
+
+  // Edit mode state
+  const [editMode, setEditMode] = useState(false);
+  const [editForm, setEditForm] = useState<EditForm>({
+    title: "",
+    owner: "",
+    dueDate: "",
+    ownerPhone: "",
+    ownerEmail: "",
+    function: "",
+    priority: "",
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
 
   async function fetchTask() {
     try {
@@ -59,6 +84,41 @@ export default function TaskDetailPage() {
   useEffect(() => {
     fetchTask();
   }, [id]);
+
+  function enterEditMode() {
+    if (!task) return;
+    setEditForm({
+      title: task.title,
+      owner: task.owner,
+      dueDate: task.dueDate ? task.dueDate.slice(0, 10) : "",
+      ownerPhone: task.ownerPhone || "",
+      ownerEmail: task.ownerEmail || "",
+      function: task.function || "",
+      priority: task.priority,
+    });
+    setEditMode(true);
+  }
+
+  async function saveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingEdit(true);
+    await fetch(`/api/tasks/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: editForm.title,
+        owner: editForm.owner,
+        ownerPhone: editForm.ownerPhone,
+        ownerEmail: editForm.ownerEmail,
+        function: editForm.function,
+        priority: editForm.priority,
+        dueDate: editForm.dueDate ? new Date(editForm.dueDate).toISOString() : "",
+      }),
+    });
+    await fetchTask();
+    setSavingEdit(false);
+    setEditMode(false);
+  }
 
   async function updateStatus(status: string) {
     setUpdatingStatus(true);
@@ -147,37 +207,155 @@ export default function TaskDetailPage() {
         <div className="col-span-2 space-y-4">
           {/* Task Header */}
           <div className="bg-white rounded-lg border border-gray-200 p-5">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex-1">
-                <h1 className="text-lg font-semibold text-gray-900 leading-snug">
-                  {task.title}
-                </h1>
-                {task.description && (
-                  <p className="text-sm text-gray-500 mt-2">{task.description}</p>
+            {editMode ? (
+              /* --- Edit Form --- */
+              <form onSubmit={saveEdit} className="space-y-4">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Title</label>
+                  <input
+                    value={editForm.title}
+                    onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                    required
+                    className="w-full border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Owner</label>
+                    <input
+                      value={editForm.owner}
+                      onChange={(e) => setEditForm({ ...editForm, owner: e.target.value })}
+                      required
+                      className="w-full border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Due Date</label>
+                    <input
+                      type="date"
+                      value={editForm.dueDate}
+                      onChange={(e) => setEditForm({ ...editForm, dueDate: e.target.value })}
+                      className="w-full border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">WhatsApp</label>
+                    <input
+                      value={editForm.ownerPhone}
+                      onChange={(e) => setEditForm({ ...editForm, ownerPhone: e.target.value })}
+                      className="w-full border border-gray-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Email (backup)</label>
+                    <input
+                      type="email"
+                      value={editForm.ownerEmail}
+                      onChange={(e) => setEditForm({ ...editForm, ownerEmail: e.target.value })}
+                      className="w-full border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Function</label>
+                    <select
+                      value={editForm.function}
+                      onChange={(e) => setEditForm({ ...editForm, function: e.target.value })}
+                      className="w-full border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                    >
+                      <option value="">— select —</option>
+                      {FUNCTIONS.map((fn) => (
+                        <option key={fn} value={fn}>{fn}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Priority</label>
+                    <select
+                      value={editForm.priority}
+                      onChange={(e) => setEditForm({ ...editForm, priority: e.target.value })}
+                      className="w-full border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                    >
+                      {["LOW", "MEDIUM", "HIGH", "CRITICAL"].map((p) => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="submit"
+                    disabled={savingEdit}
+                    className="px-4 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 transition-colors disabled:opacity-50"
+                  >
+                    {savingEdit ? "Saving…" : "Save Changes"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditMode(false)}
+                    className="px-4 py-2 bg-gray-100 text-gray-600 text-sm rounded hover:bg-gray-200 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            ) : (
+              /* --- View Mode --- */
+              <>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1">
+                    <h1 className="text-lg font-semibold text-gray-900 leading-snug">
+                      {task.title}
+                    </h1>
+                    {task.description && (
+                      <p className="text-sm text-gray-500 mt-2">{task.description}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <StatusBadge status={task.status} />
+                    <PriorityBadge priority={task.priority} />
+                    <button
+                      onClick={enterEditMode}
+                      title="Edit task"
+                      className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                    >
+                      <Pencil size={15} />
+                    </button>
+                    <button
+                      onClick={deleteTask}
+                      title="Delete task"
+                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Source */}
+                {task.source && (
+                  <div className="mt-3 flex items-center gap-1.5 text-xs text-gray-400">
+                    <Tag size={12} />
+                    <span>{task.source}</span>
+                  </div>
                 )}
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <StatusBadge status={task.status} />
-                <PriorityBadge priority={task.priority} />
-              </div>
-            </div>
 
-            {/* Source */}
-            {task.source && (
-              <div className="mt-3 flex items-center gap-1.5 text-xs text-gray-400">
-                <Tag size={12} />
-                <span>{task.source}</span>
-              </div>
-            )}
-
-            {/* Overdue warning */}
-            {daysOverdue > 0 && task.status !== "DONE" && (
-              <div className="mt-3 bg-red-50 border border-red-200 rounded px-3 py-2 flex items-center gap-2">
-                <AlertTriangle size={14} className="text-red-500" />
-                <span className="text-sm text-red-700 font-medium">
-                  {daysOverdue} day{daysOverdue !== 1 ? "s" : ""} overdue
-                </span>
-              </div>
+                {/* Overdue warning */}
+                {daysOverdue > 0 && task.status !== "DONE" && (
+                  <div className="mt-3 bg-red-50 border border-red-200 rounded px-3 py-2 flex items-center gap-2">
+                    <AlertTriangle size={14} className="text-red-500" />
+                    <span className="text-sm text-red-700 font-medium">
+                      {daysOverdue} day{daysOverdue !== 1 ? "s" : ""} overdue
+                    </span>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -454,20 +632,6 @@ export default function TaskDetailPage() {
               </div>
             </div>
           )}
-
-          {/* Danger Zone */}
-          <div className="bg-white rounded-lg border border-gray-200 p-5">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-              Danger Zone
-            </h2>
-            <button
-              onClick={deleteTask}
-              className="flex items-center gap-2 text-sm text-red-500 hover:text-red-700 transition-colors"
-            >
-              <Trash2 size={14} />
-              Delete Task
-            </button>
-          </div>
         </div>
       </div>
     </div>

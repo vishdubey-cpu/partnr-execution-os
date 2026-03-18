@@ -19,9 +19,9 @@ export async function GET(req: NextRequest) {
     if (owner && owner !== "ALL") where.owner = { contains: owner };
     if (search) {
       where.OR = [
-        { title: { contains: search } },
-        { owner: { contains: search } },
-        { description: { contains: search } },
+        { title: { contains: search, mode: "insensitive" } },
+        { owner: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
       ];
     }
 
