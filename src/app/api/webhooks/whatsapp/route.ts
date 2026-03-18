@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
       // Ask for revised date (deduped — only once per day)
       if (!(await hasReminderBeenSentToday(task.id, "delayed_followup"))) {
         await sendWhatsAppMessage("delayed_followup", task.id, task.ownerPhone, task.owner, {
-          title: task.title, owner: task.owner, dueDate: task.dueDate, id: task.id,
+          title: task.title, owner: task.owner, dueDate: task.dueDate ?? "", id: task.id,
         });
       }
       return NextResponse.json({ received: true, action: "marked_delayed", taskId: task.id });
@@ -151,7 +151,7 @@ export async function POST(req: NextRequest) {
           task.id,
           managerPhone,
           managerName,
-          { title: task.title, owner: task.owner, dueDate: task.dueDate, id: task.id },
+          { title: task.title, owner: task.owner, dueDate: task.dueDate ?? "", id: task.id },
           { managerName }
         );
         await prisma.task.update({

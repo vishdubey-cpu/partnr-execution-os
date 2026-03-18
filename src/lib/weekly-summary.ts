@@ -56,11 +56,11 @@ export async function generateWeeklySummary(): Promise<WeeklySummaryReport> {
     (t) => t.status === "DONE" && t.closedAt && new Date(t.closedAt) >= weekStart && new Date(t.closedAt) <= weekEnd
   );
   const overdueTasks = allTasks.filter(
-    (t) => t.status !== "DONE" && isBefore(new Date(t.dueDate), now)
+    (t) => t.status !== "DONE" && !!t.dueDate && isBefore(t.dueDate, now)
   );
   const doneTasks = allTasks.filter((t) => t.status === "DONE");
   const onTimeDone = doneTasks.filter(
-    (t) => t.closedAt && !isBefore(new Date(t.dueDate), new Date(t.closedAt))
+    (t) => t.closedAt && !!t.dueDate && !isBefore(t.dueDate, new Date(t.closedAt))
   ).length;
   const onTimeClosureRate = doneTasks.length > 0 ? Math.round((onTimeDone / doneTasks.length) * 100) : 0;
 
@@ -75,15 +75,19 @@ export async function generateWeeklySummary(): Promise<WeeklySummaryReport> {
   // ── Pending decisions (open + delayed, sorted by due date) ─────
   const pendingDecisionsLog = allTasks
     .filter((t) => t.status === "OPEN" || t.status === "DELAYED" || t.status === "OVERDUE")
-    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+    .sort((a, b) => {
+      const aTime = a.dueDate ? a.dueDate.getTime() : Infinity;
+      const bTime = b.dueDate ? b.dueDate.getTime() : Infinity;
+      return aTime - bTime;
+    })
     .map((t) => ({
       id: t.id,
       title: t.title,
       owner: t.owner,
       function: t.function,
-      dueDate: t.dueDate.toISOString(),
+      dueDate: t.dueDate?.toISOString() ?? "",
       status: t.status,
-      daysOverdue: getDaysOverdue(t.dueDate),
+      daysOverdue: getDaysOverdue(t.dueDate ?? undefined),
     }));
 
   // ── Overdue bucketed ──────────────────────────────────────────
@@ -109,9 +113,9 @@ export async function generateWeeklySummary(): Promise<WeeklySummaryReport> {
 
   const ownerWiseClosureRates = Object.entries(ownerMap).map(([owner, { fn, tasks }]) => {
     const closed = tasks.filter((t) => t.status === "DONE").length;
-    const overdue = tasks.filter((t) => t.status !== "DONE" && isBefore(new Date(t.dueDate), now)).length;
+    const overdue = tasks.filter((t) => t.status !== "DONE" && !!t.dueDate && isBefore(t.dueDate, now)).length;
     const onTime = tasks.filter(
-      (t) => t.status === "DONE" && t.closedAt && !isBefore(new Date(t.dueDate), new Date(t.closedAt))
+      (t) => t.status === "DONE" && t.closedAt && !!t.dueDate && !isBefore(t.dueDate, new Date(t.closedAt))
     ).length;
     return {
       owner,

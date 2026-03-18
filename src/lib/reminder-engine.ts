@@ -101,7 +101,8 @@ export async function processReminders(): Promise<ReminderJobResult> {
   result.tasks_checked = activeTasks.length;
 
   for (const task of activeTasks) {
-    const due = new Date(task.dueDate);
+    if (!task.dueDate) continue;
+    const due = task.dueDate;
     const daysUntilDue = diffDays(now, due); // negative if overdue
     const daysOverdue = -daysUntilDue;
 

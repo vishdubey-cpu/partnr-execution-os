@@ -28,7 +28,7 @@ model Task {
   ownerEmail       String?
   function         String
   priority         String    @default("MEDIUM")
-  dueDate          DateTime
+  dueDate          DateTime?
   source           String?
   status           String    @default("OPEN")
   escalationLevel  Int       @default(0)

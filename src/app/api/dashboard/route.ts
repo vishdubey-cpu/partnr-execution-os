@@ -2,6 +2,13 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isToday, isBefore } from "date-fns";
 
+// Safe helpers — handle tasks with no due date
+const isOverdue = (dueDate: Date | null, status: string) =>
+  status === "OVERDUE" || (status !== "DONE" && !!dueDate && isBefore(dueDate, new Date()));
+
+const isDueToday = (dueDate: Date | null, status: string) =>
+  status !== "DONE" && !!dueDate && isToday(dueDate);
+
 export async function GET() {
   try {
     const now = new Date();
@@ -14,17 +21,12 @@ export async function GET() {
       (t) => t.status === "OPEN" || t.status === "DELAYED"
     ).length;
 
-    const overdueTasks = allTasks.filter(
-      (t) => t.status === "OVERDUE" || (t.status !== "DONE" && isBefore(new Date(t.dueDate), now))
-    ).length;
-
-    const dueTodayTasks = allTasks.filter(
-      (t) => t.status !== "DONE" && isToday(new Date(t.dueDate))
-    ).length;
+    const overdueTasks = allTasks.filter((t) => isOverdue(t.dueDate, t.status)).length;
+    const dueTodayTasks = allTasks.filter((t) => isDueToday(t.dueDate, t.status)).length;
 
     const doneTasks = allTasks.filter((t) => t.status === "DONE");
     const onTimeDone = doneTasks.filter(
-      (t) => t.closedAt && !isBefore(new Date(t.dueDate), new Date(t.closedAt))
+      (t) => t.closedAt && t.dueDate && !isBefore(t.dueDate, t.closedAt)
     ).length;
     const onTimeClosureRate =
       doneTasks.length > 0
@@ -43,9 +45,7 @@ export async function GET() {
     const ownerStats = Object.entries(ownerMap).map(([owner, data]) => {
       const tasks = data.tasks;
       const done = tasks.filter((t) => t.status === "DONE").length;
-      const overdue = tasks.filter(
-        (t) => t.status === "OVERDUE" || (t.status !== "DONE" && isBefore(new Date(t.dueDate), now))
-      ).length;
+      const overdue = tasks.filter((t) => isOverdue(t.dueDate, t.status)).length;
       const delayed = tasks.filter((t) => t.status === "DELAYED").length;
       const open = tasks.filter((t) => t.status === "OPEN").length;
       const closureRate =
@@ -65,14 +65,12 @@ export async function GET() {
     ownerStats.sort((a, b) => b.total - a.total);
 
     const overdueTasksSummary = allTasks
-      .filter(
-        (t) =>
-          t.status === "OVERDUE" ||
-          (t.status !== "DONE" && isBefore(new Date(t.dueDate), now))
-      )
-      .sort(
-        (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
-      )
+      .filter((t) => isOverdue(t.dueDate, t.status))
+      .sort((a, b) => {
+        if (!a.dueDate) return 1;
+        if (!b.dueDate) return -1;
+        return a.dueDate.getTime() - b.dueDate.getTime();
+      })
       .slice(0, 10);
 
     const recentTasks = allTasks.slice(0, 8);
@@ -80,8 +78,8 @@ export async function GET() {
     // Tasks needing escalation: overdue 3+ days, escalationLevel still 0
     const needsEscalation = allTasks
       .filter((t) => {
-        if (t.status === "DONE") return false;
-        const daysOverdue = Math.floor((now.getTime() - new Date(t.dueDate).getTime()) / (1000 * 60 * 60 * 24));
+        if (t.status === "DONE" || !t.dueDate) return false;
+        const daysOverdue = Math.floor((now.getTime() - t.dueDate.getTime()) / (1000 * 60 * 60 * 24));
         return daysOverdue >= 3 && t.escalationLevel < 1;
       })
       .slice(0, 6);

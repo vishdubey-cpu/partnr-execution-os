@@ -5,7 +5,8 @@ export function cn(...inputs: ClassValue[]) {
   return clsx(inputs);
 }
 
-export function formatDate(date: Date | string) {
+export function formatDate(date: Date | string | null | undefined) {
+  if (!date) return "No date set";
   return format(new Date(date), "dd MMM yyyy");
 }
 
@@ -26,7 +27,8 @@ export function isDueToday(dueDate: Date | string) {
   return isToday(new Date(dueDate));
 }
 
-export function getDaysOverdue(dueDate: Date | string): number {
+export function getDaysOverdue(dueDate: Date | string | null | undefined): number {
+  if (!dueDate) return 0;
   const due = new Date(dueDate);
   const now = new Date();
   if (isAfter(due, now)) return 0;

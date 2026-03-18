@@ -11,7 +11,7 @@ export interface Task {
   ownerEmail?: string | null;
   function: string;
   priority: Priority;
-  dueDate: string;
+  dueDate: string | null;
   source?: string | null;
   status: Status;
   escalationLevel: number;

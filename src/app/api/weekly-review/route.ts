@@ -25,7 +25,7 @@ export async function GET() {
     );
 
     const overdueTasks = allTasks.filter(
-      (t) => t.status !== "DONE" && isBefore(new Date(t.dueDate), now)
+      (t) => t.status !== "DONE" && !!t.dueDate && isBefore(t.dueDate, now)
     );
 
     // Build owner stats for the week
@@ -41,7 +41,7 @@ export async function GET() {
       const tasks = data.tasks;
       const done = tasks.filter((t) => t.status === "DONE").length;
       const overdue = tasks.filter(
-        (t) => t.status !== "DONE" && isBefore(new Date(t.dueDate), now)
+        (t) => t.status !== "DONE" && !!t.dueDate && isBefore(t.dueDate, now)
       ).length;
       const delayed = tasks.filter((t) => t.status === "DELAYED").length;
       const open = tasks.filter((t) => t.status === "OPEN").length;
@@ -70,7 +70,7 @@ export async function GET() {
       .slice(0, 5);
 
     const onTimeDone = allTasks.filter(
-      (t) => t.status === "DONE" && t.closedAt && !isBefore(new Date(t.dueDate), new Date(t.closedAt))
+      (t) => t.status === "DONE" && t.closedAt && !!t.dueDate && !isBefore(t.dueDate, new Date(t.closedAt))
     ).length;
     const doneTasks = allTasks.filter((t) => t.status === "DONE");
     const onTimeClosureRate = doneTasks.length > 0 ? Math.round((onTimeDone / doneTasks.length) * 100) : 0;
@@ -96,7 +96,7 @@ export async function GET() {
       pendingDecisions: overdueTasks.slice(0, 5).map((t) => ({
         title: t.title,
         owner: t.owner,
-        daysOverdue: Math.floor((Date.now() - new Date(t.dueDate).getTime()) / (1000 * 60 * 60 * 24)),
+        daysOverdue: t.dueDate ? Math.floor((Date.now() - t.dueDate.getTime()) / (1000 * 60 * 60 * 24)) : 0,
       })),
     });
 

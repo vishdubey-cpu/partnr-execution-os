@@ -95,10 +95,10 @@ export default async function DashboardPage() {
               <p className="text-sm text-gray-400">No overdue tasks</p>
             ) : (
               data.overdueTasksSummary.map((task) => {
-                const daysOverdue = Math.floor(
+                const daysOverdue = task.dueDate ? Math.floor(
                   (Date.now() - new Date(task.dueDate).getTime()) /
                     (1000 * 60 * 60 * 24)
-                );
+                ) : 0;
                 return (
                   <a
                     key={task.id}
@@ -156,10 +156,10 @@ export default async function DashboardPage() {
               </p>
             ) : (
               data.needsEscalation.map((task) => {
-                const daysOverdue = Math.floor(
+                const daysOverdue = task.dueDate ? Math.floor(
                   (Date.now() - new Date(task.dueDate).getTime()) /
                     (1000 * 60 * 60 * 24)
-                );
+                ) : 0;
                 return (
                   <a
                     key={task.id}

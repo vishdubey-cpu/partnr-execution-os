@@ -25,9 +25,9 @@ export async function GET(req: NextRequest) {
     });
 
     const enriched = tasks.map((t) => {
-      const daysOverdue = Math.floor(
-        (now.getTime() - new Date(t.dueDate).getTime()) / (1000 * 60 * 60 * 24)
-      );
+      const daysOverdue = t.dueDate
+        ? Math.floor((now.getTime() - t.dueDate.getTime()) / (1000 * 60 * 60 * 24))
+        : 0;
       return { ...t, daysOverdue };
     });
 

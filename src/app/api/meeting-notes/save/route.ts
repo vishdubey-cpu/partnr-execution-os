@@ -36,9 +36,6 @@ export async function POST(req: NextRequest) {
 
       const due = t.dueDate ? new Date(t.dueDate) : null;
       const validDue = due && !isNaN(due.getTime()) ? due : null;
-
-      // Use provided date, or default to 30 days from now — never skip a task
-      const effectiveDue = validDue ?? new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
       const status = validDue && isBefore(validDue, now) ? "OVERDUE" : "OPEN";
 
       const task = await prisma.task.create({
@@ -50,7 +47,7 @@ export async function POST(req: NextRequest) {
           ownerEmail: t.ownerEmail || null,
           function: t.function || "",
           priority: t.priority || "MEDIUM",
-          dueDate: effectiveDue,
+          dueDate: validDue ?? undefined,
           source: `${meetingName}${meetingDate ? ` (${new Date(meetingDate).toDateString()})` : ""}`,
           status,
           activities: {
