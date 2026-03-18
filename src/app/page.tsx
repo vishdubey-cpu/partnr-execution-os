@@ -319,7 +319,7 @@ export default function HomePage() {
           {/* Bottom save bar */}
           <div className="mt-5 flex items-center justify-between">
             <p className="text-xs text-gray-400">
-              Tasks without a due date will be skipped when saving
+              Tasks without a due date will be saved with a 30-day default
             </p>
             <button
               onClick={handleSave}
