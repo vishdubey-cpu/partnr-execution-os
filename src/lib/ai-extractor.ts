@@ -287,7 +287,7 @@ Return ONLY a valid JSON array (no markdown, no explanation). Each element must 
 IMPORTANT: Extract ALL action items. If one person has multiple tasks, create one entry per task.`;
 
   const message = await client.messages.create({
-    model: "claude-3-5-haiku-20241022",
+    model: "claude-3-haiku-20240307",
     max_tokens: 2048,
     messages: [{ role: "user", content: prompt }],
   });
@@ -369,7 +369,7 @@ export async function extractTasksFromNotes(
 ): Promise<ExtractedTask[]> {
   // 1. Try Claude (best quality) — throw on failure so the user sees the real error
   if (process.env.ANTHROPIC_API_KEY && process.env.AI_PROVIDER !== "MOCK") {
-    console.log("[AI Extractor] Using Claude API (claude-3-5-haiku-20241022)");
+    console.log("[AI Extractor] Using Claude API (claude-3-haiku-20240307)");
     return await claudeExtractTasks(notes, meetingName, meetingDate);
   }
 
