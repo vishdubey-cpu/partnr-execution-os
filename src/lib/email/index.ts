@@ -1,10 +1,12 @@
 /**
  * Email Notification Provider
- * - If RESEND_API_KEY is set and EMAIL_PROVIDER=RESEND → sends real emails via Resend
- * - Otherwise → mock (logs to console, saves Reminder record)
+ * - EMAIL_PROVIDER=GMAIL  → sends via Gmail SMTP (needs GMAIL_USER + GMAIL_APP_PASSWORD)
+ * - EMAIL_PROVIDER=RESEND → sends via Resend HTTP API (needs RESEND_API_KEY)
+ * - Otherwise             → mock (logs to console only)
  */
 
 import { prisma } from "@/lib/prisma";
+import nodemailer from "nodemailer";
 
 export type EmailReminderType =
   | "task_assigned"
@@ -120,13 +122,31 @@ export async function sendEmailReminder(
 ): Promise<{ success: boolean; provider: string }> {
   const subject = buildSubject(type, taskData);
   const html = buildBody(type, recipientName, taskData, extra);
+
+  const emailProvider = process.env.EMAIL_PROVIDER?.toUpperCase();
   const provider =
-    process.env.EMAIL_PROVIDER === "RESEND" && process.env.RESEND_API_KEY
+    emailProvider === "GMAIL" && process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD
+      ? "GMAIL"
+      : emailProvider === "RESEND" && process.env.RESEND_API_KEY
       ? "RESEND"
       : "MOCK";
 
   try {
-    if (provider === "RESEND") {
+    if (provider === "GMAIL") {
+      const transporter = nodemailer.createTransport({
+        service: "gmail",
+        auth: {
+          user: process.env.GMAIL_USER,
+          pass: process.env.GMAIL_APP_PASSWORD,
+        },
+      });
+      await transporter.sendMail({
+        from: `Partnr Reminders <${process.env.GMAIL_USER}>`,
+        to: recipientEmail,
+        subject,
+        html,
+      });
+    } else if (provider === "RESEND") {
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
