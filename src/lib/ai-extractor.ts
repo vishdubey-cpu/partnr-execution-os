@@ -1,8 +1,9 @@
 /**
  * AI Task Extractor
- * - If OPENAI_API_KEY is set, uses GPT to extract tasks from meeting notes.
- * - Otherwise, uses a deterministic rule-based mock extractor.
+ * Priority: Claude API → OpenAI → regex mock
  */
+
+import Anthropic from "@anthropic-ai/sdk";
 
 export interface ExtractedTask {
   title: string;
@@ -69,7 +70,7 @@ function parseDateHint(text: string, referenceDate: Date): string | null {
     return d.toISOString().split("T")[0];
   }
 
-  // "22 Mar", "22nd Mar", "22nd March", "March 22", "30th MArch"
+  // "22 Mar", "22nd Mar", "22nd March", "30th March"
   const namedMatch = lower.match(
     /(\d{1,2})(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/
   );
@@ -118,6 +119,7 @@ function parseDateHint(text: string, referenceDate: Date): string | null {
 function stripDateFromTitle(title: string): string {
   return title
     .replace(/\s+by\s+\d{1,2}(?:st|nd|rd|th)?\s+\w+/gi, "")
+    .replace(/\sby\s+\d{1,2}(?:st|nd|rd|th)?\s+\w+/gi, "")
     .replace(
       /\s+by\s+(?:today|tomorrow|eod|end of day|next week|this week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)/gi,
       ""
@@ -152,7 +154,7 @@ function extractOwnerAndAction(line: string): { owner: string; title: string } |
     return { owner: startMatch[1], title: capitalise(startMatch[3]) };
   }
 
-  // Pattern 2: Mid-sentence "... Name will/to/should do X" (e.g. "We agreed that Ravi will send...")
+  // Pattern 2: Mid-sentence "... Name will/to/should do X"
   const midMatch = line.match(
     /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+(will|should|must|needs to|need to|has to|have to)\s+(.{6,})/
   );
@@ -160,13 +162,13 @@ function extractOwnerAndAction(line: string): { owner: string; title: string } |
     return { owner: midMatch[1], title: capitalise(midMatch[3]) };
   }
 
-  // Pattern 3: "Action: Name - Do X" or "Action: Do X"
+  // Pattern 3: "Action: Name - Do X"
   const actionMatch = line.match(/^(?:action|todo|task):\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)[\s\-–:]+(.+)/i);
   if (actionMatch) {
     return { owner: actionMatch[1], title: capitalise(actionMatch[2]) };
   }
 
-  // Pattern 4: "Name: Do X" (simple colon pattern like "Rahul: send deck by Friday")
+  // Pattern 4: "Name: Do X" (simple colon pattern)
   const colonMatch = line.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?):\s+(.{6,})/);
   if (colonMatch) {
     return { owner: colonMatch[1], title: capitalise(colonMatch[2]) };
@@ -181,10 +183,8 @@ function capitalise(s: string): string {
 
 function isActionLine(line: string): boolean {
   const lower = line.toLowerCase();
-  // List item or action prefix
   if (/^[-*•]\s+/.test(line) || /^\d+\.\s+/.test(line) || /^\[\s*\]/.test(line)) return true;
   if (/^(action|todo|task):/i.test(line)) return true;
-  // Contains action verbs
   return ACTION_WORDS.some((w) => lower.includes(w));
 }
 
@@ -195,21 +195,18 @@ export function mockExtractTasks(
   meetingName: string,
   meetingDate: Date
 ): ExtractedTask[] {
-  // Step 1: split by newlines
   const rawLines = notes
     .split("\n")
     .map((l) => l.trim())
     .filter((l) => l.length > 8);
 
-  // Step 2: for prose lines (no bullet/list marker), also split by sentence boundary
-  // This handles "Ravi will send deck. Priya will fix dashboard." as a single line
+  // For prose lines, also split by sentence boundary
   const lines: string[] = [];
   for (const raw of rawLines) {
     const isBullet = /^[-*•\d.]/.test(raw) || /^(action|todo|task):/i.test(raw);
     if (isBullet) {
       lines.push(raw);
     } else {
-      // Split on ". " or "; " — keeps sentence-ending punctuation attached to previous word
       const sentences = raw.split(/\.\s+|;\s+/).map((s) => s.trim()).filter((s) => s.length > 8);
       lines.push(...(sentences.length > 1 ? sentences : [raw]));
     }
@@ -221,18 +218,15 @@ export function mockExtractTasks(
   for (const line of lines) {
     if (!isActionLine(line)) continue;
 
-    // Strip list markers
     const cleaned = line.replace(/^[-*•\d.]+\s*/, "").replace(/^\[\s*\]\s*/, "").trim();
     if (cleaned.length < 6) continue;
 
     const ownerExtract = extractOwnerAndAction(cleaned);
     const owner = ownerExtract?.owner || "";
-    // Parse date from this line only (not the whole notes), then strip it from title
     const dueDate = parseDateHint(line, meetingDate) || "";
     const rawTitle = ownerExtract?.title || capitalise(cleaned.replace(/^(action|todo|task):\s*/i, ""));
     const title = stripDateFromTitle(rawTitle) || rawTitle;
 
-    // Deduplicate by title
     const key = title.toLowerCase().slice(0, 40);
     if (seen.has(key)) continue;
     seen.add(key);
@@ -254,10 +248,61 @@ export function mockExtractTasks(
       needsReview: !owner || !dueDate,
     });
 
-    if (tasks.length >= 15) break; // cap at 15 per meeting
+    if (tasks.length >= 15) break;
   }
 
   return tasks;
+}
+
+// ── Claude extractor ──────────────────────────────────────────────
+
+async function claudeExtractTasks(
+  notes: string,
+  meetingName: string,
+  meetingDate: Date
+): Promise<ExtractedTask[]> {
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+  const prompt = `You are a meeting notes parser. Extract every action item and task from the notes below.
+
+Meeting: ${meetingName}
+Date: ${meetingDate.toDateString()} (year: ${meetingDate.getFullYear()})
+
+Notes:
+${notes}
+
+Return ONLY a valid JSON array (no markdown, no explanation). Each element must have exactly these fields:
+- "title": string — concise action title, NO dates in it (e.g. "Prepare pricing deck" not "Prepare pricing deck by 2nd April")
+- "description": string — brief context from the notes
+- "ownerName": string — first name or full name of who owns it (empty string if unclear)
+- "ownerPhone": "" (always empty)
+- "ownerEmail": "" (always empty)
+- "dueDate": string — ISO date YYYY-MM-DD (empty string if not mentioned). Use year ${meetingDate.getFullYear()} for all dates.
+- "priority": "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
+- "function": "HR" | "Sales" | "Operations" | "Finance" | "Technology" | "Strategy" | "Marketing" | ""
+- "source": "${meetingName}"
+- "confidenceScore": number between 0 and 1
+- "needsReview": true if owner or dueDate is missing, false otherwise
+
+IMPORTANT: Extract ALL action items. If one person has multiple tasks, create one entry per task.`;
+
+  const message = await client.messages.create({
+    model: "claude-3-5-haiku-20241022",
+    max_tokens: 2048,
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  const block = message.content[0];
+  if (block.type !== "text") throw new Error("Unexpected Claude response type");
+
+  // Handle markdown code blocks if Claude wraps the JSON
+  const text = block.text.trim();
+  const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) ||
+                    text.match(/```\s*([\s\S]*?)\s*```/);
+  const jsonStr = jsonMatch ? jsonMatch[1] : text;
+
+  const parsed = JSON.parse(jsonStr);
+  return Array.isArray(parsed) ? parsed : (parsed.tasks || []);
 }
 
 // ── OpenAI extractor ─────────────────────────────────────────────
@@ -276,7 +321,7 @@ Notes:
 ${notes}
 
 Return a JSON array of tasks. Each task must have:
-- title (string, concise action title)
+- title (string, concise action title, no dates in the title)
 - description (string, context from notes)
 - ownerName (string, person responsible — empty string if unclear)
 - ownerPhone (string, always empty string)
@@ -312,7 +357,6 @@ Return ONLY a valid JSON array, no markdown, no explanation.`;
 
   const content = data.choices[0]?.message?.content || "[]";
   const parsed = JSON.parse(content);
-  // Handle both {tasks:[...]} and [...] responses
   return Array.isArray(parsed) ? parsed : parsed.tasks || [];
 }
 
@@ -323,6 +367,16 @@ export async function extractTasksFromNotes(
   meetingName: string,
   meetingDate: Date
 ): Promise<ExtractedTask[]> {
+  // 1. Try Claude (best quality)
+  if (process.env.ANTHROPIC_API_KEY && process.env.AI_PROVIDER !== "MOCK") {
+    try {
+      return await claudeExtractTasks(notes, meetingName, meetingDate);
+    } catch (err) {
+      console.warn("[AI Extractor] Claude failed, trying next:", err);
+    }
+  }
+
+  // 2. Try OpenAI
   if (process.env.OPENAI_API_KEY && process.env.AI_PROVIDER !== "MOCK") {
     try {
       return await openAIExtractTasks(notes, meetingName, meetingDate);
@@ -330,5 +384,7 @@ export async function extractTasksFromNotes(
       console.warn("[AI Extractor] OpenAI failed, falling back to mock:", err);
     }
   }
+
+  // 3. Regex mock fallback
   return mockExtractTasks(notes, meetingName, meetingDate);
 }
