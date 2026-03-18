@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isBefore } from "date-fns";
+import { sendEmailReminder } from "@/lib/email";
 
 /**
  * POST /api/meeting-notes/save
@@ -62,6 +63,17 @@ export async function POST(req: NextRequest) {
         },
       });
       createdTasks.push(task);
+
+      // Send assignment email if owner has email
+      if (t.ownerEmail) {
+        sendEmailReminder(
+          "task_assigned",
+          task.id,
+          t.ownerEmail,
+          task.owner,
+          { id: task.id, title: task.title, owner: task.owner, dueDate: task.dueDate ?? new Date() }
+        ).catch((e) => console.error("[email] task_assigned failed:", e));
+      }
     }
 
     // Update meeting note to mark as saved

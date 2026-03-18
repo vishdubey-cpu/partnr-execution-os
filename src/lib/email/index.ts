@@ -24,9 +24,9 @@ interface TaskData {
 // ── Templates ─────────────────────────────────────────────────────────
 
 function buildSubject(type: EmailReminderType, taskData: TaskData): string {
-  const due = new Date(taskData.dueDate).toLocaleDateString("en-IN", {
-    day: "numeric", month: "short", year: "numeric",
-  });
+  const due = taskData.dueDate
+    ? new Date(taskData.dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+    : "TBD";
   switch (type) {
     case "task_assigned":    return `Action Required: ${taskData.title}`;
     case "due_in_2_days":    return `Reminder: "${taskData.title}" is due in 2 days`;
@@ -43,9 +43,9 @@ function buildBody(
   taskData: TaskData,
   extra?: Record<string, string>
 ): string {
-  const due = new Date(taskData.dueDate).toLocaleDateString("en-IN", {
-    day: "numeric", month: "short", year: "numeric",
-  });
+  const due = taskData.dueDate
+    ? new Date(taskData.dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+    : "TBD";
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
   const taskUrl = `${baseUrl}/tasks/${taskData.id}`;
 

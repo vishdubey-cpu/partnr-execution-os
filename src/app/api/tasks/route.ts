@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isBefore } from "date-fns";
+import { sendEmailReminder } from "@/lib/email";
 
 export async function GET(req: NextRequest) {
   try {
@@ -42,16 +43,16 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { title, description, owner, ownerPhone, ownerEmail, function: fn, priority, dueDate, source } = body;
 
-    if (!title || !owner || !fn || !dueDate || (!ownerPhone && !ownerEmail)) {
+    if (!title || !owner || !fn || (!ownerPhone && !ownerEmail)) {
       return NextResponse.json(
-        { error: "title, owner, function, dueDate, and at least one of ownerPhone or ownerEmail are required" },
+        { error: "title, owner, function, and at least one of ownerPhone or ownerEmail are required" },
         { status: 400 }
       );
     }
 
-    const due = new Date(dueDate);
+    const due = dueDate ? new Date(dueDate) : null;
     const now = new Date();
-    const initialStatus = isBefore(due, now) ? "OVERDUE" : "OPEN";
+    const initialStatus = due && isBefore(due, now) ? "OVERDUE" : "OPEN";
 
     const task = await prisma.task.create({
       data: {
@@ -59,10 +60,10 @@ export async function POST(req: NextRequest) {
         description: description || null,
         owner,
         ownerEmail: ownerEmail || null,
-        ownerPhone,
+        ownerPhone: ownerPhone || "",
         function: fn,
         priority: priority || "MEDIUM",
-        dueDate: due,
+        dueDate: due ?? undefined,
         source: source || null,
         status: initialStatus,
         activities: {
@@ -78,6 +79,17 @@ export async function POST(req: NextRequest) {
         activities: true,
       },
     });
+
+    // Send assignment email if owner has email
+    if (ownerEmail) {
+      sendEmailReminder(
+        "task_assigned",
+        task.id,
+        ownerEmail,
+        owner,
+        { id: task.id, title: task.title, owner: task.owner, dueDate: task.dueDate ?? new Date() }
+      ).catch((e) => console.error("[email] task_assigned failed:", e));
+    }
 
     return NextResponse.json(task, { status: 201 });
   } catch (error) {
