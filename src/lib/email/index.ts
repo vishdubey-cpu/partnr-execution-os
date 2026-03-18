@@ -138,6 +138,7 @@ export async function sendEmailReminder(
           to: recipientEmail,
           subject,
           html,
+          options: { click_tracking: false, open_tracking: false },
         }),
       });
       if (!res.ok) {
