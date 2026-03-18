@@ -367,17 +367,15 @@ export async function extractTasksFromNotes(
   meetingName: string,
   meetingDate: Date
 ): Promise<ExtractedTask[]> {
-  // 1. Try Claude (best quality)
+  // 1. Try Claude (best quality) — throw on failure so the user sees the real error
   if (process.env.ANTHROPIC_API_KEY && process.env.AI_PROVIDER !== "MOCK") {
-    try {
-      return await claudeExtractTasks(notes, meetingName, meetingDate);
-    } catch (err) {
-      console.warn("[AI Extractor] Claude failed, trying next:", err);
-    }
+    console.log("[AI Extractor] Using Claude API (claude-3-5-haiku-20241022)");
+    return await claudeExtractTasks(notes, meetingName, meetingDate);
   }
 
   // 2. Try OpenAI
   if (process.env.OPENAI_API_KEY && process.env.AI_PROVIDER !== "MOCK") {
+    console.log("[AI Extractor] Using OpenAI API");
     try {
       return await openAIExtractTasks(notes, meetingName, meetingDate);
     } catch (err) {
@@ -386,5 +384,6 @@ export async function extractTasksFromNotes(
   }
 
   // 3. Regex mock fallback
+  console.log("[AI Extractor] Using regex mock (no API key set)");
   return mockExtractTasks(notes, meetingName, meetingDate);
 }

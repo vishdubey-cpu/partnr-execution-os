@@ -33,6 +33,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid meetingDate" }, { status: 400 });
     }
 
+    const provider =
+      process.env.ANTHROPIC_API_KEY && process.env.AI_PROVIDER !== "MOCK"
+        ? "claude"
+        : process.env.OPENAI_API_KEY && process.env.AI_PROVIDER !== "MOCK"
+        ? "openai"
+        : "mock";
+
+    console.log(`[meeting-notes/extract] Provider: ${provider}, AI_PROVIDER env: ${process.env.AI_PROVIDER}`);
+
     const tasks = await extractTasksFromNotes(rawNotes, meetingName, parsedDate);
 
     // Persist the meeting note record (without saving tasks yet)
@@ -45,18 +54,18 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    console.log(`[meeting-notes/extract] Extracted ${tasks.length} tasks from "${meetingName}"`);
+    console.log(`[meeting-notes/extract] Extracted ${tasks.length} tasks via ${provider} from "${meetingName}"`);
 
     return NextResponse.json({
       meetingNoteId: meetingNote.id,
       meetingName,
       meetingDate: parsedDate.toISOString(),
-      provider: process.env.OPENAI_API_KEY && process.env.AI_PROVIDER !== "MOCK" ? "openai" : "mock",
+      provider,
       tasks,
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    console.error("[meeting-notes/extract] Error:", msg);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    console.error("[meeting-notes/extract] FATAL ERROR:", msg);
+    return NextResponse.json({ error: `Extraction failed: ${msg}` }, { status: 500 });
   }
 }
