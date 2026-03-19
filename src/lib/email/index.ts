@@ -49,7 +49,7 @@ function buildBody(
     ? new Date(taskData.dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
     : "TBD";
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
-  const taskUrl = `${baseUrl}/tasks/${taskData.id}`;
+  const taskUrl = `${baseUrl}/task-view/${taskData.id}`;
 
   const wrap = (content: string) => `
     <div style="font-family: -apple-system, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #111;">

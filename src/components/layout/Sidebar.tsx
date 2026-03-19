@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   CheckSquare,
@@ -10,6 +10,7 @@ import {
   PlusCircle,
   Zap,
   NotebookText,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +26,13 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+    router.refresh();
+  }
 
   return (
     <aside className="w-56 flex-shrink-0 bg-gray-900 flex flex-col h-full">
@@ -68,8 +76,15 @@ export function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="px-5 py-4 border-t border-gray-700">
-        <p className="text-gray-500 text-xs">Internal Tool v1.0</p>
+      <div className="px-4 py-4 border-t border-gray-700 space-y-2">
+        <p className="text-gray-500 text-xs px-1">Internal Tool v1.0</p>
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-2 w-full px-3 py-2 rounded text-sm text-gray-400 hover:bg-gray-800 hover:text-white transition-colors"
+        >
+          <LogOut size={14} />
+          Sign Out
+        </button>
       </div>
     </aside>
   );
