@@ -14,6 +14,7 @@ export interface Task {
   dueDate: string | null;
   source?: string | null;
   status: Status;
+  initiative?: string;
   escalationLevel: number;
   escalationStatus: string;
   lastEscalatedAt?: string | null;
@@ -60,6 +61,23 @@ export interface Reminder {
   sentAt: string;
 }
 
+export interface PulseTask {
+  id: string;
+  title: string;
+  owner: string;
+  dueDate: string | null;
+  reason: string;
+  urgency: "critical" | "high" | "medium";
+}
+
+export interface ZombieTask {
+  id: string;
+  title: string;
+  owner: string;
+  dueDate: string | null;
+  daysSinceActivity: number;
+}
+
 export interface DashboardStats {
   totalOpenTasks: number;
   overdueTasks: number;
@@ -72,6 +90,12 @@ export interface DashboardStats {
   needsEscalation: Task[];
   silentOverdue: Task[];
   recentReminders: (Reminder & { task: { title: string; owner: string } })[];
+  // Pulse View
+  needsYouNow: PulseTask[];
+  watchList: PulseTask[];
+  zombieTasks: ZombieTask[];
+  runningFineCount: number;
+  topLine: string;
 }
 
 export interface OwnerStat {

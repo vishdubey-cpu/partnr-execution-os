@@ -35,6 +35,8 @@ model Task {
   escalationStatus String    @default("NONE") // NONE | LEVEL1 | LEVEL2
   lastEscalatedAt  DateTime?
   closedAt         DateTime?
+  initiative       String    @default("")
+  delayCount       Int       @default(0)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
