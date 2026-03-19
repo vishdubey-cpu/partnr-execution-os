@@ -107,7 +107,7 @@ export default function HomePage() {
 
   function handleCapture() {
     if (!input.trim()) return;
-    const isLong = input.trim().split("\n").length > 2 || input.length > 150;
+    const isLong = input.trim().includes("\n") || input.length > 120;
     if (isLong) {
       runExtraction(input.trim());
     } else {
@@ -160,7 +160,7 @@ export default function HomePage() {
   const hour = new Date().getHours();
   const greeting =
     hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
-  const isLong = input.trim().split("\n").length > 2 || input.length > 150;
+  const isLong = input.trim().includes("\n") || input.length > 120;
   const selectedCount = extractedTasks.filter((t) => t.selected).length;
 
   // ── Render ───────────────────────────────────────────────────────────
