@@ -5,8 +5,7 @@ import type { NextRequest } from "next/server";
 const PUBLIC_PREFIXES = [
   "/login",
   "/task-view",
-  "/api/auth",
-  "/api/webhooks",
+  "/api/",        // all API routes — pages are protected, server components need cookie-free access
   "/_next",
   "/favicon.ico",
 ];
