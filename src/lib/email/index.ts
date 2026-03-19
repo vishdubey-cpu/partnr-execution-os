@@ -59,7 +59,7 @@ function buildBody(
           View Task →
         </a>
       </p>
-      <p style="margin-top: 32px; font-size: 12px; color: #888;">Partnr Execution OS · <a href="${baseUrl}" style="color: #888;">Dashboard</a></p>
+      <p style="margin-top: 32px; font-size: 12px; color: #888;">Partnr Execution OS</p>
     </div>`;
 
   switch (type) {
