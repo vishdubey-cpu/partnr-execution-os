@@ -284,7 +284,11 @@ Return ONLY a valid JSON array (no markdown, no explanation). Each element must 
 - "confidenceScore": number between 0 and 1
 - "needsReview": true if owner or dueDate is missing, false otherwise
 
-IMPORTANT: Extract ALL action items. If one person has multiple tasks, create one entry per task.`;
+IMPORTANT RULES:
+1. Extract ALL action items. If one person has multiple tasks, create one entry per task.
+2. IMPLICIT OWNERSHIP: If the first sentence names a person as owner (e.g. "Vishal to work on X"), that person is the implicit owner for ALL subsequent tasks that don't explicitly name a different person. For example: "Vishal to work on DS profitability. Work on sales productivity. Reduce corp overheads" — all three tasks belong to Vishal.
+3. Only assign a different owner when another person's name is explicitly mentioned for that task.
+4. Never leave ownerName empty if an implicit owner can be inferred from context.`;
 
   const message = await client.messages.create({
     model: "claude-3-haiku-20240307",

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { sendEmailReminder } from "@/lib/email";
 
 export async function GET(
   _req: NextRequest,
@@ -91,6 +92,19 @@ export async function PUT(
           message,
         },
       });
+    }
+
+    // Send email if owner was assigned/changed and email is available
+    const ownerChanged = owner !== undefined && owner !== existing.owner;
+    const emailToUse = ownerEmail ?? existing.ownerEmail;
+    const ownerToUse = owner ?? existing.owner;
+    if (ownerChanged && emailToUse && ownerToUse) {
+      sendEmailReminder("task_assigned", task.id, emailToUse, ownerToUse, {
+        id: task.id,
+        title: task.title,
+        owner: ownerToUse,
+        dueDate: task.dueDate ?? new Date(),
+      }).catch((e) => console.error("[email] task_assigned on edit failed:", e));
     }
 
     return NextResponse.json(task);
