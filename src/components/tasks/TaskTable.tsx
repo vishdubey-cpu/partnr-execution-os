@@ -10,9 +10,14 @@ import { AlertCircle } from "lucide-react";
 interface TaskTableProps {
   tasks: Task[];
   showDaysOverdue?: boolean;
+  selectedIds?: Set<string>;
+  onToggle?: (id: string) => void;
+  onToggleAll?: (allIds: string[]) => void;
 }
 
-export function TaskTable({ tasks, showDaysOverdue }: TaskTableProps) {
+export function TaskTable({ tasks, showDaysOverdue, selectedIds, onToggle, onToggleAll }: TaskTableProps) {
+  const selectable = !!onToggle;
+  const allSelected = selectable && tasks.length > 0 && tasks.every((t) => selectedIds?.has(t.id));
   if (tasks.length === 0) {
     return (
       <div className="text-center py-12 text-gray-400">
@@ -26,6 +31,16 @@ export function TaskTable({ tasks, showDaysOverdue }: TaskTableProps) {
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-gray-100 bg-gray-50">
+            {selectable && (
+              <th className="py-2.5 pl-4 pr-2 w-8">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={() => onToggleAll!(tasks.map((t) => t.id))}
+                  className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                />
+              </th>
+            )}
             <th className="text-left py-2.5 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
               Task
             </th>
@@ -60,8 +75,18 @@ export function TaskTable({ tasks, showDaysOverdue }: TaskTableProps) {
             return (
               <tr
                 key={task.id}
-                className="border-b border-gray-50 hover:bg-gray-50 transition-colors"
+                className={`border-b border-gray-50 hover:bg-gray-50 transition-colors ${selectedIds?.has(task.id) ? "bg-indigo-50" : ""}`}
               >
+                {selectable && (
+                  <td className="py-3 pl-4 pr-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds?.has(task.id) ?? false}
+                      onChange={() => onToggle!(task.id)}
+                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                  </td>
+                )}
                 <td className="py-3 px-4">
                   <Link
                     href={`/tasks/${task.id}`}

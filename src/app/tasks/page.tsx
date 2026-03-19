@@ -5,13 +5,15 @@ import Link from "next/link";
 import { Task, TaskFilters } from "@/types";
 import { TaskTable } from "@/components/tasks/TaskTable";
 import { FUNCTIONS } from "@/lib/utils";
-import { PlusCircle, Search, SlidersHorizontal } from "lucide-react";
+import { PlusCircle, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<TaskFilters>({});
   const [search, setSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
@@ -38,6 +40,39 @@ export default function TasksPage() {
     return () => clearTimeout(timer);
   }, [fetchTasks]);
 
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = (allIds: string[]) => {
+    setSelectedIds((prev) => {
+      const allSelected = allIds.every((id) => prev.has(id));
+      if (allSelected) return new Set();
+      return new Set(allIds);
+    });
+  };
+
+  const deleteSelected = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Delete ${selectedIds.size} task(s)? This cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await fetch("/api/tasks/bulk-delete", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+      setSelectedIds(new Set());
+      fetchTasks();
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="p-6 max-w-screen-xl mx-auto">
       {/* Header */}
@@ -48,13 +83,25 @@ export default function TasksPage() {
             {loading ? "Loading..." : `${tasks.length} tasks`}
           </p>
         </div>
-        <Link
-          href="/tasks/new"
-          className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-indigo-700 transition-colors"
-        >
-          <PlusCircle size={15} />
-          New Task
-        </Link>
+        <div className="flex items-center gap-2">
+          {selectedIds.size > 0 && (
+            <button
+              onClick={deleteSelected}
+              disabled={deleting}
+              className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50"
+            >
+              <Trash2 size={15} />
+              {deleting ? "Deleting..." : `Delete ${selectedIds.size}`}
+            </button>
+          )}
+          <Link
+            href="/tasks/new"
+            className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-indigo-700 transition-colors"
+          >
+            <PlusCircle size={15} />
+            New Task
+          </Link>
+        </div>
       </div>
 
       {/* Filters */}
@@ -153,7 +200,12 @@ export default function TasksPage() {
             Loading tasks...
           </div>
         ) : (
-          <TaskTable tasks={tasks} />
+          <TaskTable
+            tasks={tasks}
+            selectedIds={selectedIds}
+            onToggle={toggleSelect}
+            onToggleAll={toggleAll}
+          />
         )}
       </div>
     </div>

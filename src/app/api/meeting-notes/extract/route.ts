@@ -45,19 +45,25 @@ export async function POST(req: NextRequest) {
     const tasks = await extractTasksFromNotes(rawNotes, meetingName, parsedDate);
 
     // Persist the meeting note record (without saving tasks yet)
-    const meetingNote = await prisma.meetingNote.create({
-      data: {
-        meetingName,
-        meetingDate: parsedDate,
-        rawNotes,
-        extractedJson: JSON.stringify(tasks),
-      },
-    });
+    let meetingNoteId = "";
+    try {
+      const meetingNote = await prisma.meetingNote.create({
+        data: {
+          meetingName,
+          meetingDate: parsedDate,
+          rawNotes,
+          extractedJson: JSON.stringify(tasks),
+        },
+      });
+      meetingNoteId = meetingNote.id;
+    } catch (dbErr) {
+      console.warn("[meeting-notes/extract] Could not save meeting note record (DB may not be available):", dbErr);
+    }
 
     console.log(`[meeting-notes/extract] Extracted ${tasks.length} tasks via ${provider} from "${meetingName}"`);
 
     return NextResponse.json({
-      meetingNoteId: meetingNote.id,
+      meetingNoteId,
       meetingName,
       meetingDate: parsedDate.toISOString(),
       provider,
