@@ -232,6 +232,104 @@ export async function sendDailyDigest(adminEmail: string, adminName: string, dat
   }
 }
 
+// ── Owner Update → CEO Notification ───────────────────────────────────
+
+interface OwnerUpdateData {
+  adminEmail: string;
+  adminName: string;
+  ownerName: string;
+  taskTitle: string;
+  taskId: string;
+  action: string;
+  note: string;
+  quickClose: boolean;
+}
+
+export async function sendOwnerUpdateNotification(data: OwnerUpdateData): Promise<void> {
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+  const taskUrl = `${baseUrl}/tasks/${data.taskId}`;
+  const now = new Date().toLocaleString("en-IN", {
+    day: "numeric", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+
+  const actionLabel =
+    data.action === "delivered" ? "✅ Delivered" :
+    data.action === "delayed"   ? "🕐 Delayed" :
+    data.action === "blocked"   ? "🚫 Blocked" : "Updated";
+
+  const actionColor =
+    data.action === "delivered" ? "#16A34A" :
+    data.action === "delayed"   ? "#B45309" : "#DC2626";
+
+  const quickCloseWarning = data.quickClose && data.action === "delivered"
+    ? `<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:6px;padding:10px 14px;margin-top:12px;">
+        <p style="margin:0;font-size:12px;color:#92400E;">⚠️ <strong>Quick close:</strong> Marked delivered within 60 seconds of opening the email. Verify if needed.</p>
+       </div>`
+    : "";
+
+  const subject = `${actionLabel}: ${data.ownerName} updated "${data.taskTitle}"`;
+
+  const html = `
+    <div style="font-family:-apple-system,sans-serif;max-width:560px;margin:0 auto;padding:32px 24px;color:#111;">
+      <p style="margin:0 0 4px;font-size:13px;color:#888;">${now}</p>
+      <h2 style="margin:0 0 20px;font-size:18px;font-weight:700;">
+        <span style="color:${actionColor}">${actionLabel}</span>
+      </h2>
+      <p style="margin:0 0 6px;font-size:14px;"><strong>${data.ownerName}</strong> updated a task assigned to them:</p>
+      <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:14px 16px;margin:12px 0;">
+        <p style="margin:0 0 6px;font-size:15px;font-weight:600;">${data.taskTitle}</p>
+        <p style="margin:0;font-size:13px;color:#555;">${data.note}</p>
+      </div>
+      ${quickCloseWarning}
+      <p style="margin-top:20px;">
+        <a href="${taskUrl}" style="background:#4F46E5;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;font-size:14px;">
+          View Task →
+        </a>
+      </p>
+      <p style="font-size:11px;color:#aaa;margin-top:32px;">Partnr Execution OS</p>
+    </div>`;
+
+  const emailProvider = process.env.EMAIL_PROVIDER?.toUpperCase();
+  const provider =
+    emailProvider === "GMAIL" && process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD
+      ? "GMAIL"
+      : emailProvider === "RESEND" && process.env.RESEND_API_KEY
+      ? "RESEND"
+      : "MOCK";
+
+  if (provider === "GMAIL") {
+    const nodemailerMod = await import("nodemailer");
+    const transporter = nodemailerMod.default.createTransport({
+      service: "gmail",
+      auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
+    });
+    await transporter.sendMail({
+      from: `Partnr Reminders <${process.env.GMAIL_USER}>`,
+      to: data.adminEmail,
+      subject,
+      html,
+    });
+  } else if (provider === "RESEND") {
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      },
+      body: JSON.stringify({
+        from: process.env.EMAIL_FROM || "Partnr OS <noreply@partnr.app>",
+        to: data.adminEmail,
+        subject,
+        html,
+        options: { click_tracking: false, open_tracking: false },
+      }),
+    });
+  } else {
+    console.log(`[Email MOCK] Owner update to CEO: ${data.adminEmail} | ${subject}`);
+  }
+}
+
 // ── Send function ─────────────────────────────────────────────────────
 
 export async function sendEmailReminder(
