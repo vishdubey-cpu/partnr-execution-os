@@ -16,6 +16,7 @@ interface PressureItem {
 
 interface HomeData {
   overdueItems: PressureItem[];
+  dueSoonItems: PressureItem[];
   dueTodayCount: number;
 }
 
@@ -48,19 +49,27 @@ export default function HomePage() {
       .then((r) => r.json())
       .then((d) => {
         const now = Date.now();
-        const overdueItems = (d.overdueTasksSummary || [])
-          .slice(0, 4)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .map((t: any) => ({
-            id: t.id,
-            title: t.title,
-            owner: t.owner,
-            daysOverdue: Math.floor(
-              (now - new Date(t.dueDate).getTime()) / (1000 * 60 * 60 * 24)
-            ),
-          }));
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const overdueItems = (d.overdueTasksSummary || []).slice(0, 4).map((t: any) => ({
+          id: t.id,
+          title: t.title,
+          owner: t.owner,
+          daysOverdue: Math.floor(
+            (now - new Date(t.dueDate).getTime()) / (1000 * 60 * 60 * 24)
+          ),
+        }));
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const dueSoonItems = (d.dueSoonSummary || []).slice(0, 3).map((t: any) => ({
+          id: t.id,
+          title: t.title,
+          owner: t.owner,
+          daysOverdue: -Math.ceil(
+            (new Date(t.dueDate).getTime() - now) / (1000 * 60 * 60 * 24)
+          ),
+        }));
         setPressureData({
           overdueItems,
+          dueSoonItems,
           dueTodayCount: d.dueTodayTasks || 0,
         });
       })
@@ -393,7 +402,7 @@ export default function HomePage() {
             }}
             rows={4}
             placeholder={
-              "What was decided?\n\ne.g. \"Ravi owns pricing deck by Friday\"\nor paste messy meeting notes — I'll extract the tasks"
+              "What was decided in the meeting?\n\n• \"Ravi to finalize pricing deck by 25 Mar\"\n• \"Priya owns hiring plan — due end of month\"\n• Paste full meeting notes — AI will extract all tasks with owners & dates"
             }
             className="w-full px-5 pt-5 pb-2 text-sm text-gray-800 placeholder-gray-300 focus:outline-none rounded-t-xl resize-none leading-relaxed bg-transparent"
             autoFocus
@@ -429,6 +438,7 @@ export default function HomePage() {
             </div>
           ) : !pressureData ||
             (pressureData.overdueItems.length === 0 &&
+              pressureData.dueSoonItems.length === 0 &&
               pressureData.dueTodayCount === 0) ? (
             <div className="bg-white rounded-xl border border-gray-100 px-5 py-8 text-center">
               <p className="text-sm text-gray-400">Nothing urgent right now</p>
@@ -446,24 +456,39 @@ export default function HomePage() {
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <span className="text-base flex-shrink-0">
-                      {item.daysOverdue >= 3 ? "🔴" : "🟡"}
+                      {item.daysOverdue >= 3 ? "🔴" : "🟠"}
                     </span>
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-gray-800 truncate">
                         {item.title}
                       </p>
                       <p className="text-xs text-gray-400 mt-0.5">
-                        {item.owner} ·{" "}
-                        {item.daysOverdue > 0
-                          ? `${item.daysOverdue}d overdue`
-                          : "due today"}
+                        {item.owner} · {item.daysOverdue > 0 ? `${item.daysOverdue}d overdue` : "due today"}
                       </p>
                     </div>
                   </div>
-                  <ArrowRight
-                    size={14}
-                    className="text-gray-300 group-hover:text-red-400 flex-shrink-0 ml-3 transition-colors"
-                  />
+                  <ArrowRight size={14} className="text-gray-300 group-hover:text-red-400 flex-shrink-0 ml-3 transition-colors" />
+                </a>
+              ))}
+
+              {pressureData.dueSoonItems.map((item) => (
+                <a
+                  key={item.id}
+                  href={`/tasks/${item.id}`}
+                  className="flex items-center justify-between bg-white rounded-xl border border-amber-100 px-4 py-3.5 hover:bg-amber-50 transition-all group"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="text-base flex-shrink-0">🟡</span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">
+                        {item.title}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {item.owner} · due in {Math.abs(item.daysOverdue)} day{Math.abs(item.daysOverdue) !== 1 ? "s" : ""}
+                      </p>
+                    </div>
+                  </div>
+                  <ArrowRight size={14} className="text-gray-300 group-hover:text-amber-400 flex-shrink-0 ml-3 transition-colors" />
                 </a>
               ))}
 

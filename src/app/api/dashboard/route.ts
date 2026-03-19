@@ -73,6 +73,18 @@ export async function GET() {
       })
       .slice(0, 10);
 
+    // Tasks due in next 3 days (not overdue, not done)
+    const in3Days = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+    const dueSoonSummary = allTasks
+      .filter((t) => {
+        if (t.status === "DONE" || !t.dueDate) return false;
+        if (isOverdue(t.dueDate, t.status)) return false; // already in overdueTasksSummary
+        if (isToday(t.dueDate)) return false; // already counted in dueTodayTasks
+        return t.dueDate <= in3Days;
+      })
+      .sort((a, b) => (a.dueDate!.getTime() - b.dueDate!.getTime()))
+      .slice(0, 5);
+
     const recentTasks = allTasks.slice(0, 8);
 
     // Tasks needing escalation: overdue 3+ days, escalationLevel still 0
@@ -100,6 +112,7 @@ export async function GET() {
       ownerStats,
       recentTasks,
       overdueTasksSummary,
+      dueSoonSummary,
       needsEscalation,
       recentReminders,
     });
