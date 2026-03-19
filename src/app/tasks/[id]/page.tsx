@@ -131,6 +131,24 @@ export default function TaskDetailPage() {
     setUpdatingStatus(false);
   }
 
+  async function reopenTask() {
+    setUpdatingStatus(true);
+    // Set status back to OPEN
+    await fetch(`/api/tasks/${id}/status`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "OPEN" }),
+    });
+    // Send reassignment email to owner
+    await fetch(`/api/tasks/${id}/resend-reminder`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: "reopened" }),
+    });
+    await fetchTask();
+    setUpdatingStatus(false);
+  }
+
   async function updateEscalation(level: number) {
     await fetch(`/api/tasks/${id}`, {
       method: "PUT",
@@ -359,13 +377,11 @@ export default function TaskDetailPage() {
             )}
           </div>
 
-          {/* Status Actions */}
-          {task.status !== "DONE" && (
-            <div className="bg-white rounded-lg border border-gray-200 p-5">
-              <h2 className="text-sm font-semibold text-gray-700 mb-3">
-                Update Status
-              </h2>
-              <div className="flex flex-wrap gap-2">
+          {/* Status Actions — always visible */}
+          <div className="bg-white rounded-lg border border-gray-200 p-5">
+            <h2 className="text-sm font-semibold text-gray-700 mb-3">Update Status</h2>
+            <div className="flex flex-wrap gap-2">
+              {task.status !== "DONE" && (
                 <button
                   onClick={() => updateStatus("DONE")}
                   disabled={updatingStatus}
@@ -374,25 +390,34 @@ export default function TaskDetailPage() {
                   <CheckCircle size={14} />
                   Mark Done
                 </button>
+              )}
+              {task.status !== "DELAYED" && task.status !== "DONE" && (
                 <button
                   onClick={() => updateStatus("DELAYED")}
-                  disabled={updatingStatus || task.status === "DELAYED"}
+                  disabled={updatingStatus}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 text-white text-sm rounded hover:bg-amber-600 transition-colors disabled:opacity-50"
                 >
                   <Clock size={14} />
                   Mark Delayed
                 </button>
+              )}
+              {task.status !== "OPEN" && (
                 <button
-                  onClick={() => updateStatus("OPEN")}
-                  disabled={updatingStatus || task.status === "OPEN"}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300 transition-colors disabled:opacity-50"
+                  onClick={() => reopenTask()}
+                  disabled={updatingStatus}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 transition-colors disabled:opacity-50"
                 >
                   <RotateCcw size={14} />
-                  Reopen
+                  Reopen &amp; Notify Owner
                 </button>
-              </div>
+              )}
             </div>
-          )}
+            {task.status === "DONE" && (
+              <p className="text-xs text-gray-400 mt-2">
+                Vatsal marked this done. If incorrect, reopen and notify them.
+              </p>
+            )}
+          </div>
 
           {/* Comments */}
           <div className="bg-white rounded-lg border border-gray-200 p-5">
