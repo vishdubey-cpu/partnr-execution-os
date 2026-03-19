@@ -36,6 +36,27 @@ export function TaskForm({ initialTitle = "" }: { initialTitle?: string }) {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [ownerHint, setOwnerHint] = useState("");
+
+  async function handleOwnerBlur() {
+    if (!form.owner.trim()) return;
+    if (form.ownerPhone || form.ownerEmail) return; // already filled
+    try {
+      const res = await fetch(`/api/owners?name=${encodeURIComponent(form.owner.trim())}`);
+      const data = await res.json();
+      if (data) {
+        setForm((prev) => ({
+          ...prev,
+          ownerPhone: prev.ownerPhone || data.ownerPhone || "",
+          ownerEmail: prev.ownerEmail || data.ownerEmail || "",
+        }));
+        setOwnerHint("Contact details auto-filled from previous task");
+        setTimeout(() => setOwnerHint(""), 3000);
+      }
+    } catch {
+      // silently ignore
+    }
+  }
 
   function handleChange(
     e: React.ChangeEvent<
@@ -122,9 +143,11 @@ export function TaskForm({ initialTitle = "" }: { initialTitle?: string }) {
           name="owner"
           value={form.owner}
           onChange={handleChange}
+          onBlur={handleOwnerBlur}
           placeholder="e.g. Priya Sharma"
           className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
         />
+        {ownerHint && <p className="text-xs text-green-600 mt-1">{ownerHint}</p>}
       </div>
 
       {/* Phone + Email */}
