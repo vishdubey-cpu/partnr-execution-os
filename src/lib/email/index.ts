@@ -8,6 +8,61 @@
 import { prisma } from "@/lib/prisma";
 import nodemailer from "nodemailer";
 
+// Returns array of Chief of Staff emails from env var
+function getCoSEmails(): string[] {
+  const raw = process.env.CHIEF_OF_STAFF_EMAILS || "";
+  return raw.split(",").map((e) => e.trim()).filter(Boolean);
+}
+
+// Sends email to primary recipient + CC to all CoS
+async function sendEmail(opts: {
+  to: string;
+  subject: string;
+  html: string;
+  ccList?: string[];
+}): Promise<void> {
+  const cc = opts.ccList ?? getCoSEmails();
+  const emailProvider = process.env.EMAIL_PROVIDER?.toUpperCase();
+  const provider =
+    emailProvider === "GMAIL" && process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD
+      ? "GMAIL"
+      : emailProvider === "RESEND" && process.env.RESEND_API_KEY
+      ? "RESEND"
+      : "MOCK";
+
+  if (provider === "GMAIL") {
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
+    });
+    await transporter.sendMail({
+      from: `Partnr Reminders <${process.env.GMAIL_USER}>`,
+      to: opts.to,
+      cc: cc.length ? cc.join(",") : undefined,
+      subject: opts.subject,
+      html: opts.html,
+    });
+  } else if (provider === "RESEND") {
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      },
+      body: JSON.stringify({
+        from: process.env.EMAIL_FROM || "Partnr OS <noreply@partnr.app>",
+        to: opts.to,
+        ...(cc.length ? { cc } : {}),
+        subject: opts.subject,
+        html: opts.html,
+        options: { click_tracking: false, open_tracking: false },
+      }),
+    });
+  } else {
+    console.log(`[Email MOCK] To: ${opts.to}${cc.length ? ` | CC: ${cc.join(", ")}` : ""} | Subject: ${opts.subject}`);
+  }
+}
+
 export type EmailReminderType =
   | "task_assigned"
   | "due_in_2_days"
@@ -192,44 +247,7 @@ export async function sendDailyDigest(adminEmail: string, adminName: string, dat
     ? `⏰ ${data.dueTodayCount} tasks due today — daily execution update`
     : `✓ All clear — daily execution update`;
 
-  const emailProvider = process.env.EMAIL_PROVIDER?.toUpperCase();
-  const provider =
-    emailProvider === "GMAIL" && process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD
-      ? "GMAIL"
-      : emailProvider === "RESEND" && process.env.RESEND_API_KEY
-      ? "RESEND"
-      : "MOCK";
-
-  if (provider === "GMAIL") {
-    const nodemailerMod = await import("nodemailer");
-    const transporter = nodemailerMod.default.createTransport({
-      service: "gmail",
-      auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
-    });
-    await transporter.sendMail({
-      from: `Partnr Reminders <${process.env.GMAIL_USER}>`,
-      to: adminEmail,
-      subject,
-      html,
-    });
-  } else if (provider === "RESEND") {
-    await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-      },
-      body: JSON.stringify({
-        from: process.env.EMAIL_FROM || "Partnr OS <noreply@partnr.app>",
-        to: adminEmail,
-        subject,
-        html,
-        options: { click_tracking: false, open_tracking: false },
-      }),
-    });
-  } else {
-    console.log(`[Email MOCK] Daily digest to: ${adminEmail} | Subject: ${subject}`);
-  }
+  await sendEmail({ to: adminEmail, subject, html });
 }
 
 // ── Owner Update → CEO Notification ───────────────────────────────────
@@ -290,44 +308,7 @@ export async function sendOwnerUpdateNotification(data: OwnerUpdateData): Promis
       <p style="font-size:11px;color:#aaa;margin-top:32px;">Partnr Execution OS</p>
     </div>`;
 
-  const emailProvider = process.env.EMAIL_PROVIDER?.toUpperCase();
-  const provider =
-    emailProvider === "GMAIL" && process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD
-      ? "GMAIL"
-      : emailProvider === "RESEND" && process.env.RESEND_API_KEY
-      ? "RESEND"
-      : "MOCK";
-
-  if (provider === "GMAIL") {
-    const nodemailerMod = await import("nodemailer");
-    const transporter = nodemailerMod.default.createTransport({
-      service: "gmail",
-      auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
-    });
-    await transporter.sendMail({
-      from: `Partnr Reminders <${process.env.GMAIL_USER}>`,
-      to: data.adminEmail,
-      subject,
-      html,
-    });
-  } else if (provider === "RESEND") {
-    await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-      },
-      body: JSON.stringify({
-        from: process.env.EMAIL_FROM || "Partnr OS <noreply@partnr.app>",
-        to: data.adminEmail,
-        subject,
-        html,
-        options: { click_tracking: false, open_tracking: false },
-      }),
-    });
-  } else {
-    console.log(`[Email MOCK] Owner update to CEO: ${data.adminEmail} | ${subject}`);
-  }
+  await sendEmail({ to: data.adminEmail, subject, html });
 }
 
 // ── Send function ─────────────────────────────────────────────────────
