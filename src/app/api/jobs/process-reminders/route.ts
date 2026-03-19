@@ -31,11 +31,16 @@ export async function POST(req: NextRequest) {
   }
 }
 
-/** GET — used for n8n HTTP Request node health check */
+/** GET — triggers reminders directly (useful for browser testing) */
 export async function GET() {
-  return NextResponse.json({
-    endpoint: "POST /api/jobs/process-reminders",
-    description: "Processes due-date reminders and escalations for all active tasks",
-    status: "ready",
-  });
+  try {
+    console.log("[process-reminders] Job started at", new Date().toISOString());
+    const result = await processReminders();
+    console.log("[process-reminders] Done:", result);
+    return NextResponse.json({ ok: true, ...result });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error("[process-reminders] Fatal error:", msg);
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+  }
 }
