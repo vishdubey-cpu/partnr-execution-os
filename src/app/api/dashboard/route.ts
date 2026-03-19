@@ -50,6 +50,9 @@ export async function GET() {
       const open = tasks.filter((t) => t.status === "OPEN").length;
       const closureRate =
         tasks.length > 0 ? Math.round((done / tasks.length) * 100) : 0;
+      const executionScore = tasks.length > 0
+        ? Math.max(0, Math.min(100, Math.round((done / tasks.length) * 100 - (overdue / tasks.length) * 30)))
+        : 0;
       return {
         owner,
         function: data.function,
@@ -59,6 +62,7 @@ export async function GET() {
         overdue,
         delayed,
         closureRate,
+        executionScore,
       };
     });
 

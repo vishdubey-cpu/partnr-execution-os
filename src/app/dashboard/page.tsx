@@ -34,8 +34,26 @@ export default async function DashboardPage() {
         </p>
       </div>
 
+      {/* Escalation Alert Banner */}
+      {data.needsEscalation.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-6 flex flex-wrap items-center gap-3">
+          <ArrowUpCircle size={18} className="text-red-500 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-red-800">
+              {data.needsEscalation.length} task{data.needsEscalation.length > 1 ? "s" : ""} need escalation now
+            </p>
+            <p className="text-xs text-red-600 mt-0.5 truncate">
+              {data.needsEscalation.map((t) => t.owner).filter((v, i, a) => a.indexOf(v) === i).join(", ")} — overdue 3+ days, no escalation triggered
+            </p>
+          </div>
+          <a href="#escalation" className="text-xs font-semibold text-red-700 hover:underline flex-shrink-0">
+            View →
+          </a>
+        </div>
+      )}
+
       {/* Stats Row */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <StatsCard
           label="Open Tasks"
           value={data.totalOpenTasks}
@@ -67,7 +85,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Two-column layout */}
-      <div className="grid grid-cols-3 gap-5 mb-5">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
         {/* Owner Stats */}
         <div className="col-span-2 bg-white rounded-lg border border-gray-200">
           <div className="px-5 py-4 border-b border-gray-100">
@@ -137,9 +155,9 @@ export default async function DashboardPage() {
       </div>
 
       {/* Escalation + Reminders row */}
-      <div className="grid grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         {/* Needs Escalation */}
-        <div className="bg-white rounded-lg border border-gray-200">
+        <div id="escalation" className="bg-white rounded-lg border border-gray-200">
           <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
             <ArrowUpCircle size={14} className="text-orange-500" />
             <h2 className="text-sm font-semibold text-gray-800">

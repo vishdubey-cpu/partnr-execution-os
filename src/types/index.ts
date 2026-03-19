@@ -81,6 +81,7 @@ export interface OwnerStat {
   overdue: number;
   delayed: number;
   closureRate: number;
+  executionScore: number;
 }
 
 export interface WeeklyReview {

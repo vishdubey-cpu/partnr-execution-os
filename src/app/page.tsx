@@ -242,9 +242,19 @@ export default function HomePage() {
               <h2 className="text-lg font-semibold text-gray-900">
                 {extractedTasks.length} tasks extracted
               </h2>
-              <p className="text-xs text-gray-400 mt-0.5">
-                Review and fix, then save — {selectedCount} selected
-              </p>
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                <span className="text-xs text-gray-400">{selectedCount} selected</span>
+                {extractedTasks.filter(t => t.confidenceScore >= 0.8).length > 0 && (
+                  <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                    ✓ {extractedTasks.filter(t => t.confidenceScore >= 0.8).length} high confidence
+                  </span>
+                )}
+                {extractedTasks.filter(t => t.needsReview).length > 0 && (
+                  <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                    ⚠ {extractedTasks.filter(t => t.needsReview).length} needs review
+                  </span>
+                )}
+              </div>
             </div>
             <button
               onClick={handleSave}
@@ -271,7 +281,7 @@ export default function HomePage() {
               <div
                 key={task._key}
                 className={`bg-white rounded-xl border px-4 py-4 transition-all ${
-                  task.selected ? "border-gray-200" : "border-gray-100 opacity-50"
+                  !task.selected ? "border-gray-100 opacity-50" : task.needsReview ? "border-amber-300" : "border-gray-200"
                 }`}
               >
                 <div className="flex items-start gap-3">
@@ -284,6 +294,10 @@ export default function HomePage() {
                   />
 
                   <div className="flex-1 space-y-2.5">
+                    {/* Confidence badge */}
+                    {task.needsReview && (
+                      <p className="text-xs text-amber-600 font-medium">⚠ Missing owner or date — please fill in</p>
+                    )}
                     {/* Title */}
                     <input
                       value={task.title}
@@ -371,11 +385,13 @@ export default function HomePage() {
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-2xl mx-auto px-6 pt-14 pb-12">
 
-        {/* Greeting */}
+        {/* Headline */}
         <div className="mb-8">
-          <h1 className="text-2xl font-semibold text-gray-900">{greeting}.</h1>
-          <p className="text-sm text-gray-400 mt-1">
-            {new Date().toLocaleDateString("en-IN", {
+          <h1 className="text-2xl font-bold text-gray-900 leading-snug">
+            After your meetings —<br />does anything actually happen?
+          </h1>
+          <p className="text-sm text-gray-400 mt-2">
+            {greeting} · {new Date().toLocaleDateString("en-IN", {
               weekday: "long",
               day: "numeric",
               month: "long",
