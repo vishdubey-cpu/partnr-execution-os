@@ -107,12 +107,7 @@ export default function HomePage() {
 
   function handleCapture() {
     if (!input.trim()) return;
-    const isLong = input.trim().includes("\n") || input.length > 120;
-    if (isLong) {
-      runExtraction(input.trim());
-    } else {
-      router.push(`/tasks/new?title=${encodeURIComponent(input.trim())}`);
-    }
+    runExtraction(input.trim());
   }
 
   function updateTask(key: number, field: string, value: string | boolean) {
@@ -160,7 +155,7 @@ export default function HomePage() {
   const hour = new Date().getHours();
   const greeting =
     hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
-  const isLong = input.trim().includes("\n") || input.length > 120;
+  const isLong = true; // always extract
   const selectedCount = extractedTasks.filter((t) => t.selected).length;
 
   // ── Render ───────────────────────────────────────────────────────────
@@ -380,9 +375,7 @@ export default function HomePage() {
             <p className="text-xs text-gray-300">
               {input.length === 0
                 ? "⌘ + Enter to capture"
-                : isLong
-                ? "Looks like meeting notes → will extract tasks"
-                : "Short entry → creates a quick task"}
+                : "Claude will extract owner, date, and task"}
             </p>
             <button
               onClick={handleCapture}
@@ -390,7 +383,7 @@ export default function HomePage() {
               className="flex items-center gap-1.5 bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <Sparkles size={13} />
-              {isLong ? "Extract Tasks" : "Capture"}
+              Extract Tasks
             </button>
           </div>
         </div>
