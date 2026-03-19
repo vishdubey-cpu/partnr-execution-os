@@ -294,6 +294,12 @@ export default function HomePage() {
                   />
 
                   <div className="flex-1 space-y-2.5">
+                    {/* Source sentence */}
+                    {task.sourceText && (
+                      <p className="text-xs text-gray-400 italic border-l-2 border-gray-200 pl-2 line-clamp-2">
+                        &ldquo;{task.sourceText}&rdquo;
+                      </p>
+                    )}
                     {/* Confidence badge */}
                     {task.needsReview && (
                       <p className="text-xs text-amber-600 font-medium">⚠ Missing owner or date — please fill in</p>

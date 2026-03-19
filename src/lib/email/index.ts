@@ -110,6 +110,128 @@ function buildBody(
   }
 }
 
+// ── Daily Digest ──────────────────────────────────────────────────────
+
+interface DigestData {
+  overdueCount: number;
+  dueTodayCount: number;
+  silentOverdue: { title: string; owner: string; daysOverdue: number; id: string }[];
+  dueTodayTasks: { title: string; owner: string; id: string }[];
+  worstOwner?: { owner: string; overdueCount: number };
+}
+
+export async function sendDailyDigest(adminEmail: string, adminName: string, data: DigestData): Promise<void> {
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+  const dashboardUrl = `${baseUrl}/dashboard`;
+
+  const silentRows = data.silentOverdue.slice(0, 5).map(
+    (t) => `<tr>
+      <td style="padding:6px 8px;border-bottom:1px solid #fca5a5;">
+        <a href="${baseUrl}/tasks/${t.id}" style="color:#111;text-decoration:none;font-size:13px;font-weight:500;">${t.title}</a>
+      </td>
+      <td style="padding:6px 8px;border-bottom:1px solid #fca5a5;font-size:12px;color:#555;">${t.owner}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #fca5a5;font-size:12px;color:#DC2626;font-weight:600;">${t.daysOverdue}d overdue</td>
+    </tr>`
+  ).join("");
+
+  const dueTodayRows = data.dueTodayTasks.slice(0, 3).map(
+    (t) => `<tr>
+      <td style="padding:6px 8px;border-bottom:1px solid #fde68a;">
+        <a href="${baseUrl}/tasks/${t.id}" style="color:#111;text-decoration:none;font-size:13px;">${t.title}</a>
+      </td>
+      <td style="padding:6px 8px;border-bottom:1px solid #fde68a;font-size:12px;color:#555;">${t.owner}</td>
+    </tr>`
+  ).join("");
+
+  const html = `
+    <div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;padding:32px 24px;color:#111;">
+      <h2 style="font-size:20px;font-weight:700;margin:0 0 4px;">Good morning, ${adminName}.</h2>
+      <p style="font-size:13px;color:#888;margin:0 0 28px;">Here's what is <strong>NOT</strong> happening in your team today.</p>
+
+      ${data.silentOverdue.length > 0 ? `
+      <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:16px;margin-bottom:20px;">
+        <p style="margin:0 0 10px;font-size:13px;font-weight:700;color:#DC2626;">🚨 ${data.silentOverdue.length} task${data.silentOverdue.length > 1 ? "s" : ""} overdue — owner not responding</p>
+        <table style="width:100%;border-collapse:collapse;">
+          <thead><tr>
+            <th style="text-align:left;font-size:11px;color:#888;padding:0 8px 6px;font-weight:600;">TASK</th>
+            <th style="text-align:left;font-size:11px;color:#888;padding:0 8px 6px;font-weight:600;">OWNER</th>
+            <th style="text-align:left;font-size:11px;color:#888;padding:0 8px 6px;font-weight:600;">STATUS</th>
+          </tr></thead>
+          <tbody>${silentRows}</tbody>
+        </table>
+      </div>` : `
+      <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:14px;margin-bottom:20px;">
+        <p style="margin:0;font-size:13px;color:#16A34A;">✓ No silent overdue tasks — team is responding to reminders</p>
+      </div>`}
+
+      ${data.dueTodayCount > 0 ? `
+      <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:16px;margin-bottom:20px;">
+        <p style="margin:0 0 10px;font-size:13px;font-weight:700;color:#B45309;">⏰ ${data.dueTodayCount} task${data.dueTodayCount > 1 ? "s" : ""} due today</p>
+        <table style="width:100%;border-collapse:collapse;">
+          <tbody>${dueTodayRows}</tbody>
+        </table>
+      </div>` : ""}
+
+      ${data.worstOwner ? `
+      <div style="background:#F5F3FF;border:1px solid #DDD6FE;border-radius:8px;padding:14px;margin-bottom:24px;">
+        <p style="margin:0;font-size:13px;color:#5B21B6;">⚠️ <strong>${data.worstOwner.owner}</strong> has ${data.worstOwner.overdueCount} overdue task${data.worstOwner.overdueCount > 1 ? "s" : ""} — needs attention</p>
+      </div>` : ""}
+
+      <p style="margin-bottom:20px;">
+        <a href="${dashboardUrl}" style="background:#4F46E5;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:500;">
+          View Full Dashboard →
+        </a>
+      </p>
+
+      <p style="font-size:11px;color:#aaa;margin-top:32px;">Partnr Execution OS · Daily Digest</p>
+    </div>`;
+
+  const subject = data.silentOverdue.length > 0
+    ? `🚨 ${data.silentOverdue.length} tasks not moving — daily execution update`
+    : data.dueTodayCount > 0
+    ? `⏰ ${data.dueTodayCount} tasks due today — daily execution update`
+    : `✓ All clear — daily execution update`;
+
+  const emailProvider = process.env.EMAIL_PROVIDER?.toUpperCase();
+  const provider =
+    emailProvider === "GMAIL" && process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD
+      ? "GMAIL"
+      : emailProvider === "RESEND" && process.env.RESEND_API_KEY
+      ? "RESEND"
+      : "MOCK";
+
+  if (provider === "GMAIL") {
+    const nodemailerMod = await import("nodemailer");
+    const transporter = nodemailerMod.default.createTransport({
+      service: "gmail",
+      auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
+    });
+    await transporter.sendMail({
+      from: `Partnr Reminders <${process.env.GMAIL_USER}>`,
+      to: adminEmail,
+      subject,
+      html,
+    });
+  } else if (provider === "RESEND") {
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      },
+      body: JSON.stringify({
+        from: process.env.EMAIL_FROM || "Partnr OS <noreply@partnr.app>",
+        to: adminEmail,
+        subject,
+        html,
+        options: { click_tracking: false, open_tracking: false },
+      }),
+    });
+  } else {
+    console.log(`[Email MOCK] Daily digest to: ${adminEmail} | Subject: ${subject}`);
+  }
+}
+
 // ── Send function ─────────────────────────────────────────────────────
 
 export async function sendEmailReminder(

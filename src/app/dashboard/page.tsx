@@ -34,6 +34,44 @@ export default async function DashboardPage() {
         </p>
       </div>
 
+      {/* WHAT IS NOT HAPPENING — silent overdue tasks */}
+      {data.silentOverdue.length > 0 && (
+        <div className="bg-red-600 rounded-lg px-5 py-4 mb-5">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-white text-base">🚨</span>
+            <h2 className="text-white font-bold text-sm uppercase tracking-wide">
+              What is NOT happening
+            </h2>
+            <span className="ml-auto text-xs bg-red-800 text-red-200 px-2 py-0.5 rounded-full font-medium">
+              {data.silentOverdue.length} silent
+            </span>
+          </div>
+          <p className="text-red-200 text-xs mb-3">
+            Overdue tasks where the owner has not responded to any reminder
+          </p>
+          <div className="space-y-2">
+            {data.silentOverdue.map((task) => {
+              const daysOverdue = task.dueDate
+                ? Math.floor((Date.now() - new Date(task.dueDate).getTime()) / (1000 * 60 * 60 * 24))
+                : 0;
+              return (
+                <a
+                  key={task.id}
+                  href={`/tasks/${task.id}`}
+                  className="flex items-center justify-between bg-red-700 hover:bg-red-800 rounded px-3 py-2 transition-colors"
+                >
+                  <div className="min-w-0">
+                    <p className="text-white text-sm font-medium truncate">{task.title}</p>
+                    <p className="text-red-300 text-xs mt-0.5">{task.owner} · {daysOverdue}d overdue · no response</p>
+                  </div>
+                  <span className="text-red-300 text-xs ml-3 flex-shrink-0">→</span>
+                </a>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Escalation Alert Banner */}
       {data.needsEscalation.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-6 flex flex-wrap items-center gap-3">

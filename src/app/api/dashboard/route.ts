@@ -100,6 +100,26 @@ export async function GET() {
       })
       .slice(0, 6);
 
+    // Silent overdue: tasks that are overdue AND owner has never replied via inbound
+    const inboundReplies = await prisma.reminder.findMany({
+      where: { type: "INBOUND_REPLY" },
+      select: { taskId: true },
+    });
+    const repliedTaskIds = new Set(inboundReplies.map((r) => r.taskId));
+
+    const silentOverdue = allTasks
+      .filter((t) => {
+        if (t.status === "DONE" || !t.dueDate) return false;
+        if (!isOverdue(t.dueDate, t.status)) return false;
+        return !repliedTaskIds.has(t.id);
+      })
+      .sort((a, b) => {
+        if (!a.dueDate) return 1;
+        if (!b.dueDate) return -1;
+        return a.dueDate.getTime() - b.dueDate.getTime();
+      })
+      .slice(0, 6);
+
     // Recent reminders sent
     const recentReminders = await prisma.reminder.findMany({
       where: { type: { not: "INBOUND_REPLY" } },
@@ -118,6 +138,7 @@ export async function GET() {
       overdueTasksSummary,
       dueSoonSummary,
       needsEscalation,
+      silentOverdue,
       recentReminders,
     });
   } catch (error) {

@@ -15,6 +15,7 @@ export interface ExtractedTask {
   priority: string;
   function: string;
   source: string;
+  sourceText?: string;
   confidenceScore: number;
   needsReview: boolean;
 }
@@ -244,6 +245,7 @@ export function mockExtractTasks(
       priority,
       function: fn,
       source: meetingName,
+      sourceText: cleaned,
       confidenceScore: owner && dueDate ? 0.85 : owner ? 0.65 : 0.4,
       needsReview: !owner || !dueDate,
     });
@@ -281,6 +283,7 @@ Return ONLY a valid JSON array (no markdown, no explanation). Each element must 
 - "priority": "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
 - "function": "HR" | "Sales" | "Operations" | "Finance" | "Technology" | "Strategy" | "Marketing" | ""
 - "source": "${meetingName}"
+- "sourceText": string — the exact sentence or phrase from the notes that this task came from
 - "confidenceScore": number between 0 and 1
 - "needsReview": true if owner or dueDate is missing, false otherwise
 
@@ -334,6 +337,7 @@ Return a JSON array of tasks. Each task must have:
 - priority (string: LOW | MEDIUM | HIGH | CRITICAL)
 - function (string: HR | Sales | Operations | Finance | Technology | Strategy | Marketing | empty)
 - source (string, set to "${meetingName}")
+- sourceText (string, the exact sentence from the notes this task came from)
 - confidenceScore (number 0.0-1.0)
 - needsReview (boolean, true if owner or dueDate is missing)
 

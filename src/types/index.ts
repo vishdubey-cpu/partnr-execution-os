@@ -68,7 +68,9 @@ export interface DashboardStats {
   ownerStats: OwnerStat[];
   recentTasks: Task[];
   overdueTasksSummary: Task[];
+  dueSoonSummary: Task[];
   needsEscalation: Task[];
+  silentOverdue: Task[];
   recentReminders: (Reminder & { task: { title: string; owner: string } })[];
 }
 
@@ -118,6 +120,7 @@ export interface ExtractedTask {
   priority: string;
   function: string;
   source: string;
+  sourceText?: string;
   confidenceScore: number;
   needsReview: boolean;
   selected?: boolean;
