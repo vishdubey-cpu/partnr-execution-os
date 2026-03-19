@@ -24,7 +24,7 @@ const navItems = [
   { label: "Meeting Notes", href: "/meeting-notes", icon: NotebookText },
 ];
 
-export function Sidebar() {
+export function Sidebar({ onClose }: { onClose?: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -35,7 +35,7 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="w-56 flex-shrink-0 bg-gray-900 flex flex-col h-full">
+    <aside className="w-64 md:w-56 flex-shrink-0 bg-gray-900 flex flex-col h-full">
       {/* Logo */}
       <div className="px-5 py-5 border-b border-gray-700">
         <div className="flex items-center gap-2">
@@ -61,8 +61,9 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
+              onClick={onClose}
               className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors",
+                "flex items-center gap-3 px-3 py-2.5 rounded text-sm transition-colors",
                 isActive
                   ? "bg-indigo-600 text-white"
                   : "text-gray-300 hover:bg-gray-800 hover:text-white"

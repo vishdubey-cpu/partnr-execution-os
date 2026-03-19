@@ -192,7 +192,7 @@ export default function TaskDetailPage() {
   const daysOverdue = getDaysOverdue(task.dueDate);
 
   return (
-    <div className="p-6 max-w-screen-lg mx-auto">
+    <div className="p-4 md:p-6 max-w-screen-lg mx-auto">
       {/* Back */}
       <Link
         href="/tasks"
@@ -202,9 +202,9 @@ export default function TaskDetailPage() {
         Back to Tasks
       </Link>
 
-      <div className="grid grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Main content */}
-        <div className="col-span-2 space-y-4">
+        <div className="col-span-1 lg:col-span-2 space-y-4">
           {/* Task Header */}
           <div className="bg-white rounded-lg border border-gray-200 p-5">
             {editMode ? (
@@ -220,7 +220,7 @@ export default function TaskDetailPage() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Owner</label>
                     <input

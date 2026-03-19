@@ -74,7 +74,7 @@ export default function TasksPage() {
   };
 
   return (
-    <div className="p-6 max-w-screen-xl mx-auto">
+    <div className="p-4 md:p-6 max-w-screen-xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div>
@@ -106,14 +106,14 @@ export default function TasksPage() {
 
       {/* Filters */}
       <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 flex-wrap">
           <div className="flex items-center gap-2 text-gray-400">
             <SlidersHorizontal size={14} />
             <span className="text-xs font-medium text-gray-500">Filters:</span>
           </div>
 
           {/* Search */}
-          <div className="relative flex-1 min-w-48">
+          <div className="relative flex-1 min-w-0 sm:min-w-48">
             <Search
               size={14}
               className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"

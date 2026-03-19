@@ -283,7 +283,7 @@ export default function HomePage() {
                     />
 
                     {/* Owner + Due Date — the two fields that matter */}
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div>
                         <label className="block text-xs text-gray-400 mb-0.5">Owner</label>
                         <input
@@ -311,7 +311,7 @@ export default function HomePage() {
                     </div>
 
                     {/* Phone + Email — always visible */}
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div>
                         <label className="block text-xs text-gray-400 mb-0.5">WhatsApp</label>
                         <input
