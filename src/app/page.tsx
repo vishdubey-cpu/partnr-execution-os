@@ -91,14 +91,19 @@ export default function HomePage() {
         (a.ownerName || "").localeCompare(b.ownerName || "")
       );
       setMeetingNoteId(data.meetingNoteId);
-      setExtractedTasks(
-        sorted.map((t: ExtractedTask, i: number) => ({
-          ...t,
-          selected: true,
-          _key: i,
-        }))
-      );
+      const rows = sorted.map((t: ExtractedTask, i: number) => ({
+        ...t,
+        selected: true,
+        _key: i,
+      }));
+      setExtractedTasks(rows);
       setPageState("review");
+      // Auto-fill contact details for each owner from previous tasks
+      rows.forEach((t: ExtractedRow) => {
+        if (t.ownerName && (!t.ownerPhone || !t.ownerEmail)) {
+          lookupOwnerForTask(t._key, t.ownerName);
+        }
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Extraction failed");
       setPageState("capture");
@@ -114,6 +119,29 @@ export default function HomePage() {
     setExtractedTasks((prev) =>
       prev.map((t) => (t._key === key ? { ...t, [field]: value } : t))
     );
+  }
+
+  async function lookupOwnerForTask(key: number, ownerName: string) {
+    if (!ownerName.trim()) return;
+    try {
+      const res = await fetch(`/api/owners?name=${encodeURIComponent(ownerName.trim())}`);
+      const data = await res.json();
+      if (data) {
+        setExtractedTasks((prev) =>
+          prev.map((t) =>
+            t._key === key
+              ? {
+                  ...t,
+                  ownerPhone: t.ownerPhone || data.ownerPhone || "",
+                  ownerEmail: t.ownerEmail || data.ownerEmail || "",
+                }
+              : t
+          )
+        );
+      }
+    } catch {
+      // silently ignore
+    }
   }
 
   async function handleSave() {
@@ -261,6 +289,7 @@ export default function HomePage() {
                         <input
                           value={task.ownerName}
                           onChange={(e) => updateTask(task._key, "ownerName", e.target.value)}
+                          onBlur={(e) => lookupOwnerForTask(task._key, e.target.value)}
                           placeholder="Owner name"
                           className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
                         />
