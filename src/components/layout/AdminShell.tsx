@@ -9,8 +9,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  // Public owner-facing pages: no sidebar, no auth nav, no Sign Out
   const isPublic =
-    pathname.startsWith("/login") || pathname.startsWith("/task-view");
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/task-view") ||
+    pathname.startsWith("/my-tasks");
 
   if (isPublic) {
     return <>{children}</>;

@@ -102,8 +102,35 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
   );
 
   if (!task) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <p className="text-sm text-gray-500">Task not found.</p>
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+      <div className="w-full max-w-sm text-center">
+        {/* Partnr logo */}
+        <div className="flex items-center justify-center gap-2 mb-8">
+          <div className="w-6 h-6 bg-indigo-600 rounded flex items-center justify-center">
+            <span className="text-white text-xs font-bold">P</span>
+          </div>
+          <span className="text-sm font-medium text-gray-500">Partnr · Task Update</span>
+        </div>
+
+        {/* Icon */}
+        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-5">
+          <CheckCircle2 size={28} className="text-gray-400" />
+        </div>
+
+        {/* Message */}
+        <h2 className="text-base font-semibold text-gray-800 mb-2">
+          This task has been removed
+        </h2>
+        <p className="text-sm text-gray-500 leading-relaxed">
+          This task no longer exists in the system — it may have been closed or
+          cancelled by your team. No action is needed from you.
+        </p>
+        <p className="text-xs text-gray-400 mt-6">
+          If you think this is an error, check with your team lead.
+        </p>
+
+        <p className="text-xs text-gray-300 mt-10">Partnr Execution OS · Internal tool</p>
+      </div>
     </div>
   );
 
