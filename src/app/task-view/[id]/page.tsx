@@ -3,10 +3,10 @@
 import { useState, useEffect, useRef } from "react";
 import {
   CheckCircle2, Clock, AlertTriangle, TrendingUp,
-  Calendar, User, MessageSquare, Activity,
-  ChevronDown, ChevronUp, ArrowLeft, Layers,
+  Calendar, User, ArrowLeft,
 } from "lucide-react";
 
+// ── Interfaces ──────────────────────────────────────────────────────────────
 interface TaskActivity {
   id: string;
   type: string;
@@ -14,14 +14,12 @@ interface TaskActivity {
   actor?: string | null;
   createdAt: string;
 }
-
 interface TaskComment {
   id: string;
   author: string;
   content: string;
   createdAt: string;
 }
-
 interface Task {
   id: string;
   title: string;
@@ -35,7 +33,6 @@ interface Task {
   activities: TaskActivity[];
   comments: TaskComment[];
 }
-
 type Action = "delivered" | "on_track" | "delayed" | "blocked" | null;
 
 const DELAY_REASONS = [
@@ -45,26 +42,87 @@ const DELAY_REASONS = [
   "Deprioritized",
 ] as const;
 
-// ── Timeline builder ──────────────────────────────────────────────────────
+// ── Timeline ────────────────────────────────────────────────────────────────
 type TimelineEntry =
   | { kind: "activity"; id: string; message: string; type: string; actor?: string | null; ts: Date }
-  | { kind: "comment";  id: string; author: string;  content: string;                     ts: Date };
+  | { kind: "comment";  id: string; author: string;  content: string; ts: Date };
 
-function buildTimeline(activities: TaskActivity[], comments: TaskComment[]): TimelineEntry[] {
-  const hiddenTypes = ["REMINDER_SENT"];
-  const acts: TimelineEntry[] = activities
-    .filter((a) => !hiddenTypes.includes(a.type))
-    .map((a) => ({ kind: "activity" as const, id: a.id, message: a.message, type: a.type, actor: a.actor, ts: new Date(a.createdAt) }));
-
-  const cmts: TimelineEntry[] = comments.map((c) => ({
+function buildTimeline(acts: TaskActivity[], cmts: TaskComment[]): TimelineEntry[] {
+  const hidden = ["REMINDER_SENT"];
+  const a: TimelineEntry[] = acts
+    .filter(a => !hidden.includes(a.type))
+    .map(a => ({ kind: "activity" as const, id: a.id, message: a.message, type: a.type, actor: a.actor, ts: new Date(a.createdAt) }));
+  const c: TimelineEntry[] = cmts.map(c => ({
     kind: "comment" as const, id: c.id, author: c.author, content: c.content, ts: new Date(c.createdAt),
   }));
-
-  return [...acts, ...cmts].sort((a, b) => a.ts.getTime() - b.ts.getTime());
+  return [...a, ...c].sort((x, y) => x.ts.getTime() - y.ts.getTime());
 }
 
-function relativeTime(date: Date): string {
-  const diff = Date.now() - date.getTime();
+type DotCfg = { dot: string; ring: string; label: string };
+function getEntryConfig(entry: TimelineEntry): DotCfg {
+  if (entry.kind === "comment") return { dot: "bg-indigo-500", ring: "ring-indigo-100", label: "Comment" };
+  const msg = entry.message.toLowerCase();
+  switch (entry.type) {
+    case "CREATED":
+      return { dot: "bg-green-500", ring: "ring-green-100", label: "Assigned" };
+    case "STATUS_CHANGE":
+      if (msg.includes("done"))    return { dot: "bg-green-500",  ring: "ring-green-100",  label: "Delivered"      };
+      if (msg.includes("delayed")) return { dot: "bg-amber-400",  ring: "ring-amber-100",  label: "Delay reported" };
+      if (msg.includes("overdue")) return { dot: "bg-red-500",    ring: "ring-red-100",    label: "Overdue"        };
+      if (msg.includes("open"))    return { dot: "bg-blue-400",   ring: "ring-blue-100",   label: "Reopened"       };
+      return { dot: "bg-gray-400", ring: "ring-gray-100", label: "Status updated" };
+    case "ESCALATION":
+      return { dot: "bg-red-600", ring: "ring-red-100", label: "Escalated" };
+    case "NOTE":
+      return { dot: "bg-purple-400", ring: "ring-purple-100", label: "Note" };
+    default:
+      return { dot: "bg-gray-300", ring: "ring-gray-50", label: "Update" };
+  }
+}
+
+// ── Smart narrative ──────────────────────────────────────────────────────────
+function generateNarrative(task: Task, timeline: TimelineEntry[]): string | null {
+  const acts = task.activities ?? [];
+  const createdAct = acts.find(a => a.type === "CREATED");
+  const delayCount = acts.filter(a =>
+    a.type === "STATUS_CHANGE" && a.message.toLowerCase().includes("delayed")
+  ).length;
+  const escalated = acts.some(a => a.type === "ESCALATION");
+  const lastEntry  = timeline.length > 0 ? timeline[timeline.length - 1] : null;
+  const daysSilent = lastEntry ? Math.floor((Date.now() - lastEntry.ts.getTime()) / 86400000) : null;
+  const due        = task.dueDate ? new Date(task.dueDate) : null;
+  const daysUntilDue = due ? Math.floor((due.getTime() - Date.now()) / 86400000) : null;
+
+  if (task.status === "DONE") {
+    return `Delivered${createdAct ? ` — assigned on ${new Date(createdAct.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` : ""}. Great execution.`;
+  }
+
+  const parts: string[] = [];
+  if (createdAct) {
+    const d = new Date(createdAct.createdAt);
+    const dateStr = d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+    const fromMeeting = createdAct.message.toLowerCase().includes("meeting");
+    parts.push(fromMeeting ? `Assigned on ${dateStr} from a meeting note.` : `Assigned on ${dateStr}.`);
+  }
+  if (delayCount === 1) parts.push("Delayed once so far.");
+  else if (delayCount > 1) parts.push(`Delayed ${delayCount} times.`);
+  if (escalated) parts.push("Escalated to management.");
+  if (daysSilent !== null && daysSilent >= 3) {
+    parts.push(`No update for ${daysSilent} day${daysSilent !== 1 ? "s" : ""}.`);
+  }
+  if (daysUntilDue !== null && daysUntilDue < 0) {
+    parts.push(`${Math.abs(daysUntilDue)}d past the deadline.`);
+  } else if (daysUntilDue !== null && daysUntilDue === 0) {
+    parts.push("Due today.");
+  } else if (daysUntilDue !== null && daysUntilDue <= 2) {
+    parts.push(`${daysUntilDue} day${daysUntilDue !== 1 ? "s" : ""} left.`);
+  }
+  return parts.length > 0 ? parts.join(" ") : null;
+}
+
+// ── Time helpers ────────────────────────────────────────────────────────────
+function relTime(date: Date): string {
+  const diff  = Date.now() - date.getTime();
   const mins  = Math.floor(diff / 60000);
   const hours = Math.floor(diff / 3600000);
   const days  = Math.floor(diff / 86400000);
@@ -72,53 +130,34 @@ function relativeTime(date: Date): string {
   if (mins  < 60) return `${mins}m ago`;
   if (hours < 24) return `${hours}h ago`;
   if (days === 1) return "yesterday";
-  if (days  < 7)  return `${days} days ago`;
+  if (days  < 7)  return `${days}d ago`;
   return date.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 }
-
-function formatFull(date: Date): string {
-  return date.toLocaleString("en-IN", {
-    day: "numeric", month: "short", year: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  });
+function fullDate(date: Date): string {
+  return date.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) +
+    " · " + date.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
 }
 
-function BackLink({ owner }: { owner: string }) {
-  const href = `/my-tasks/${encodeURIComponent(owner)}`;
-  return (
-    <a
-      href={href}
-      className="inline-flex items-center gap-1.5 text-xs text-indigo-500 hover:text-indigo-700 font-medium transition-colors"
-    >
-      <ArrowLeft size={12} />
-      All your tasks
-    </a>
-  );
-}
-
-// ── Page ─────────────────────────────────────────────────────────────────
+// ── Page ─────────────────────────────────────────────────────────────────────
 export default function TaskViewPage({ params }: { params: { id: string } }) {
-  const [task, setTask]               = useState<Task | null>(null);
-  const [notFound, setNotFound]       = useState(false);
-  const [loading, setLoading]         = useState(true);
-  const [submitting, setSubmitting]   = useState(false);
-  const [submitted, setSubmitted]     = useState<Action>(null);
-  const [action, setAction]           = useState<Action>(null);
-  const [note, setNote]               = useState("");
-  const [newDate, setNewDate]         = useState("");
+  const [task, setTask]           = useState<Task | null>(null);
+  const [notFound, setNotFound]   = useState(false);
+  const [loading, setLoading]     = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState<Action>(null);
+  const [action, setAction]       = useState<Action>(null);
+  const [note, setNote]           = useState("");
+  const [newDate, setNewDate]     = useState("");
   const [delayReason, setDelayReason] = useState("");
-  const [showFullHistory, setShowFullHistory] = useState(false);
+  const [showAll, setShowAll]     = useState(false);
   const pageLoadTime = useRef(Date.now());
 
   useEffect(() => {
     fetch(`/api/tasks/${params.id}`)
       .then(async (r) => {
         const data = await r.json();
-        if (!r.ok || data?.error) {
-          setNotFound(true);
-        } else {
-          setTask(data);
-        }
+        if (!r.ok || data?.error) { setNotFound(true); }
+        else { setTask(data); }
         setLoading(false);
       })
       .catch(() => { setNotFound(true); setLoading(false); });
@@ -132,15 +171,15 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
   async function handleSubmit() {
     if (!task || !canSubmit) return;
     setSubmitting(true);
-    const secondsOnPage = Math.floor((Date.now() - pageLoadTime.current) / 1000);
+    const secs = Math.floor((Date.now() - pageLoadTime.current) / 1000);
     const newStatus = action === "delivered" ? "DONE" : action === "on_track" ? task.status : "DELAYED";
     await fetch(`/api/tasks/${params.id}/status`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        status: newStatus, note, action, quickClose: secondsOnPage < 60,
+        status: newStatus, note, action, quickClose: secs < 60,
         ...(newDate     ? { newDueDate: newDate } : {}),
-        ...(delayReason ? { delayReason }          : {}),
+        ...(delayReason ? { delayReason }         : {}),
       }),
     });
     setSubmitted(action);
@@ -153,29 +192,27 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
     (action === "blocked"   && note.trim().length >= 5) ||
     (action === "delayed"   && !!delayReason);
 
-  // ── Loading ───────────────────────────────────────────────────────────
+  // ── Loading ─────────────────────────────────────────────────────────────
   if (loading) return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="space-y-2 text-center">
-        <div className="w-8 h-8 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin mx-auto" />
-        <p className="text-sm text-gray-400">Loading task…</p>
+      <div className="text-center space-y-2">
+        <div className="w-8 h-8 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto" />
+        <p className="text-sm text-gray-400">Loading…</p>
       </div>
     </div>
   );
 
-  // ── Task removed / not found ──────────────────────────────────────────
+  // ── Task removed ─────────────────────────────────────────────────────────
   if (notFound) return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="w-full max-w-sm text-center">
-        {/* Partnr header */}
         <div className="flex items-center justify-center gap-2 mb-10">
           <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center">
             <span className="text-white text-xs font-bold">P</span>
           </div>
           <span className="text-sm font-semibold text-gray-600">Partnr</span>
         </div>
-        {/* Icon */}
-        <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
+        <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-5">
           <CheckCircle2 size={32} className="text-gray-300" />
         </div>
         <h2 className="text-lg font-bold text-gray-800 mb-2">This task has been removed</h2>
@@ -183,189 +220,186 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
           This task no longer exists — it may have been closed or cancelled by your team.
           <strong className="block mt-2 text-gray-700">No action is needed from you.</strong>
         </p>
-        <p className="text-xs text-gray-400 mt-6 bg-gray-100 rounded-xl px-4 py-3">
+        <p className="text-xs text-gray-400 mt-5 bg-gray-100 rounded-xl px-4 py-3">
           If you think this is an error, check with your team lead.
         </p>
-        <p className="text-xs text-gray-300 mt-10">Partnr Execution OS · Internal tool</p>
+        <p className="text-xs text-gray-300 mt-8">Partnr Execution OS · Internal tool</p>
       </div>
     </div>
   );
 
-  // ── Build timeline ────────────────────────────────────────────────────
-  const timeline = buildTimeline(task!.activities ?? [], task!.comments ?? []);
-  const PREVIEW  = 3;
-  const visible  = showFullHistory ? timeline : timeline.slice(-PREVIEW);
-  const hasMore  = timeline.length > PREVIEW;
+  // ── Derived values ────────────────────────────────────────────────────────
+  const timeline   = buildTimeline(task!.activities ?? [], task!.comments ?? []);
+  const PREVIEW    = 4;
+  const visible    = showAll ? timeline : timeline.slice(-PREVIEW);
+  const hiddenCount = timeline.length - PREVIEW;
+  const narrative  = generateNarrative(task!, timeline);
 
   const due       = task!.dueDate ? new Date(task!.dueDate) : null;
   const dueLabel  = due ? due.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : null;
   const isOverdue = due && due < new Date() && task!.status !== "DONE";
 
-  const statusConfig: Record<string, { bg: string; text: string; label: string; dot: string }> = {
-    OPEN:    { bg: "bg-blue-100",   text: "text-blue-700",   label: "Open",    dot: "bg-blue-500"  },
-    DELAYED: { bg: "bg-amber-100",  text: "text-amber-700",  label: "Delayed", dot: "bg-amber-500" },
-    OVERDUE: { bg: "bg-red-100",    text: "text-red-700",    label: "Overdue", dot: "bg-red-500"   },
-    DONE:    { bg: "bg-green-100",  text: "text-green-700",  label: "Done",    dot: "bg-green-500" },
+  const statusCfg: Record<string, { bg: string; text: string; label: string; bar: string }> = {
+    OPEN:    { bg: "bg-blue-100",  text: "text-blue-700",  label: "Open",    bar: "bg-blue-400"    },
+    DELAYED: { bg: "bg-amber-100", text: "text-amber-700", label: "Delayed", bar: "bg-amber-400"   },
+    OVERDUE: { bg: "bg-red-100",   text: "text-red-700",   label: "Overdue", bar: "bg-red-400"     },
+    DONE:    { bg: "bg-green-100", text: "text-green-700", label: "Done",    bar: "bg-green-400"   },
   };
-  const sc = statusConfig[task!.status] ?? statusConfig.OPEN;
+  const sc = statusCfg[task!.status] ?? statusCfg.OPEN;
 
-  const priorityBadge: Record<string, string> = {
-    CRITICAL: "text-red-600 bg-red-50 border-red-200",
-    HIGH:     "text-orange-600 bg-orange-50 border-orange-200",
-  };
-
-  const ownerName = task!.owner && task!.owner !== "Unassigned" ? task!.owner : null;
+  const ownerName  = task!.owner && task!.owner !== "Unassigned" ? task!.owner : null;
+  const firstName  = ownerName?.split(" ")[0] ?? null;
   const myTasksUrl = ownerName ? `/my-tasks/${encodeURIComponent(ownerName)}` : null;
 
-  // ── Render ──────────────────────────────────────────────────────────
+  // ── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gray-50 px-4 py-8">
-      <div className="w-full max-w-md mx-auto space-y-4">
+    <div className="min-h-screen bg-gray-50 px-4 py-7">
+      <div className="w-full max-w-md mx-auto space-y-3">
 
-        {/* ── Header ── */}
-        <div className="flex items-center justify-between mb-1">
-          {/* Back link (left) */}
+        {/* ── Top bar ── */}
+        <div className="flex items-center justify-between">
           {myTasksUrl ? (
-            <a href={myTasksUrl} className="flex items-center gap-1.5 text-xs text-indigo-500 hover:text-indigo-700 font-medium transition-colors">
-              <ArrowLeft size={13} />
-              All your tasks
+            <a href={myTasksUrl}
+              className="flex items-center gap-1.5 text-xs font-semibold text-indigo-500 hover:text-indigo-700 transition-colors">
+              <ArrowLeft size={13} /> All your tasks
             </a>
           ) : <div />}
-
-          {/* Partnr badge (centre-right) */}
           <div className="flex items-center gap-1.5">
             <div className="w-6 h-6 bg-indigo-600 rounded-lg flex items-center justify-center">
               <span className="text-white text-xs font-bold">P</span>
             </div>
-            <span className="text-xs font-semibold text-gray-500">Partnr</span>
+            <span className="text-xs font-semibold text-gray-400">Partnr</span>
           </div>
         </div>
 
-        {/* ── Personal greeting ── */}
-        {ownerName && (
-          <div className="text-center py-1">
-            <p className="text-sm text-gray-500">
-              Hi <strong className="text-gray-800">{ownerName}</strong> 👋
-            </p>
-          </div>
+        {/* ── Greeting ── */}
+        {firstName && (
+          <p className="text-sm text-gray-500 text-center pt-1">
+            Hi <strong className="text-gray-800">{firstName}</strong> 👋
+          </p>
         )}
 
         {/* ── Task card ── */}
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-          {/* Coloured top bar based on status */}
-          <div className={`h-1.5 w-full ${
-            task!.status === "DONE"    ? "bg-green-400" :
-            task!.status === "DELAYED" ? "bg-amber-400" :
-            isOverdue                  ? "bg-red-400"   : "bg-indigo-400"
-          }`} />
+          {/* Status bar */}
+          <div className={`h-1 w-full ${sc.bar}`} />
 
           <div className="p-5">
-            {/* Status + priority */}
-            <div className="flex items-center gap-2 mb-3">
-              <span className={`flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full ${sc.bg} ${sc.text}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${sc.dot}`} />
+            {/* Pills row */}
+            <div className="flex flex-wrap items-center gap-1.5 mb-3">
+              <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${sc.bg} ${sc.text}`}>
                 {sc.label}
               </span>
-              {task!.priority && priorityBadge[task!.priority] && (
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${priorityBadge[task!.priority]}`}>
-                  {task!.priority}
+              {dueLabel && (
+                <span className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full ${
+                  isOverdue ? "bg-red-50 text-red-600" : "bg-gray-100 text-gray-500"
+                }`}>
+                  <Calendar size={10} />
+                  {isOverdue ? `Overdue · ${dueLabel}` : dueLabel}
+                </span>
+              )}
+              {task!.function && (
+                <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-gray-100 text-gray-500">
+                  {task!.function}
                 </span>
               )}
             </div>
 
             {/* Title */}
-            <h1 className="text-xl font-bold text-gray-900 leading-snug mb-3">{task!.title}</h1>
+            <h1 className="text-xl font-extrabold text-gray-900 leading-tight mb-2">
+              {task!.title}
+            </h1>
 
             {/* Description */}
             {task!.description && (
-              <p className="text-sm text-gray-500 mb-3 leading-relaxed">{task!.description}</p>
+              <p className="text-sm text-gray-500 leading-relaxed mb-3">{task!.description}</p>
             )}
 
-            {/* Meta */}
-            <div className="space-y-1.5 mb-3">
-              <div className="flex items-center gap-2 text-sm text-gray-500">
-                <User size={13} className="text-gray-400 flex-shrink-0" />
-                <span className="font-medium text-gray-700">{task!.owner}</span>
-                {task!.function && (
-                  <><span className="text-gray-300">·</span><span className="text-xs text-gray-400">{task!.function}</span></>
-                )}
-              </div>
-              {dueLabel && (
-                <div className={`flex items-center gap-2 text-sm font-medium ${isOverdue ? "text-red-600" : "text-gray-600"}`}>
-                  <Calendar size={13} className={`flex-shrink-0 ${isOverdue ? "text-red-500" : "text-gray-400"}`} />
-                  <span>{isOverdue ? `⚠️ Overdue — was due ${dueLabel}` : `Due ${dueLabel}`}</span>
-                </div>
-              )}
+            {/* Owner */}
+            <div className="flex items-center gap-1.5 text-sm text-gray-500">
+              <User size={13} className="text-gray-400" />
+              <span className="font-medium text-gray-700">{task!.owner}</span>
             </div>
 
-            {/* Context / source */}
+            {/* Source context */}
             {task!.source && (
-              <div className="bg-slate-50 border-l-4 border-slate-300 rounded-r-xl px-3 py-2.5 mt-3">
+              <div className="mt-3 bg-slate-50 border-l-4 border-slate-300 rounded-r-xl px-3 py-2.5">
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-0.5">Context</p>
-                <p className="text-xs text-slate-600 italic leading-relaxed">&ldquo;{task!.source}&rdquo;</p>
+                <p className="text-xs text-slate-600 italic leading-relaxed">
+                  &ldquo;{task!.source}&rdquo;
+                </p>
               </div>
             )}
           </div>
         </div>
 
-        {/* ── Task history / timeline ── */}
+        {/* ── Smart narrative ── */}
+        {narrative && (
+          <div className="bg-indigo-50 border border-indigo-100 rounded-2xl px-4 py-3 flex gap-2.5 items-start">
+            <div className="w-5 h-5 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <span className="text-indigo-500 text-xs">✦</span>
+            </div>
+            <p className="text-sm text-indigo-800 leading-relaxed">{narrative}</p>
+          </div>
+        )}
+
+        {/* ── Execution timeline ── */}
         {timeline.length > 0 && (
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Layers size={13} className="text-gray-400" />
-                <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Task History</p>
-              </div>
-              <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                {timeline.length} update{timeline.length !== 1 ? "s" : ""}
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-xs font-extrabold text-gray-700 uppercase tracking-wider">
+                Execution Timeline
+              </p>
+              <span className="text-xs text-gray-400">
+                {timeline.length} event{timeline.length !== 1 ? "s" : ""}
               </span>
             </div>
 
-            {hasMore && (
+            {/* Show older entries toggle */}
+            {hiddenCount > 0 && !showAll && (
               <button
-                onClick={() => setShowFullHistory(!showFullHistory)}
-                className="flex items-center gap-1.5 text-xs text-indigo-500 hover:text-indigo-700 mb-3 transition-colors font-medium"
+                onClick={() => setShowAll(true)}
+                className="w-full text-xs font-semibold text-indigo-500 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-xl py-2 mb-4 transition-colors"
               >
-                {showFullHistory
-                  ? <><ChevronDown size={13} /> Show less</>
-                  : <><ChevronUp   size={13} /> Show {timeline.length - PREVIEW} earlier update{timeline.length - PREVIEW !== 1 ? "s" : ""}</>
-                }
+                ↑ Show {hiddenCount} earlier event{hiddenCount !== 1 ? "s" : ""}
+              </button>
+            )}
+            {showAll && hiddenCount > 0 && (
+              <button
+                onClick={() => setShowAll(false)}
+                className="w-full text-xs font-semibold text-gray-400 hover:text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-xl py-2 mb-4 transition-colors"
+              >
+                ↓ Show less
               </button>
             )}
 
-            <div className="space-y-4">
-              {visible.map((entry) => {
-                if (entry.kind === "comment") {
-                  return (
-                    <div key={entry.id} className="flex gap-2.5">
-                      <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-                        <MessageSquare size={12} className="text-indigo-600" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="bg-indigo-50 border border-indigo-100 rounded-2xl rounded-tl-sm px-3.5 py-2.5">
-                          <p className="text-xs font-bold text-indigo-700 mb-0.5">{entry.author}</p>
-                          <p className="text-sm text-gray-700 leading-snug">{entry.content}</p>
-                        </div>
-                        <p className="text-xs text-gray-400 mt-1 ml-1" title={formatFull(entry.ts)}>
-                          {relativeTime(entry.ts)}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                }
+            {/* Timeline entries */}
+            <div>
+              {visible.map((entry, idx) => {
+                const cfg    = getEntryConfig(entry);
+                const isLast = idx === visible.length - 1;
+                const actor  = entry.kind === "comment" ? entry.author : (entry.actor || "System");
 
-                const isKey = ["CREATED", "STATUS_CHANGE", "ESCALATION", "NOTE"].includes(entry.type);
                 return (
-                  <div key={entry.id} className="flex gap-2.5">
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${isKey ? "bg-gray-100" : "bg-gray-50"}`}>
-                      <Activity size={11} className={isKey ? "text-gray-500" : "text-gray-300"} />
+                  <div key={entry.id} className="flex gap-3">
+                    {/* Dot + line */}
+                    <div className="flex flex-col items-center flex-shrink-0" style={{ width: 20 }}>
+                      <div className={`w-3 h-3 rounded-full flex-shrink-0 ring-4 mt-1 ${cfg.dot} ${cfg.ring}`} />
+                      {!isLast && <div className="w-px flex-1 bg-gray-100 my-1" />}
                     </div>
-                    <div className="flex-1 min-w-0 pt-1">
-                      <p className={`text-sm leading-snug ${isKey ? "text-gray-700" : "text-gray-400"}`}>
-                        {entry.message}
-                      </p>
-                      <p className="text-xs text-gray-300 mt-0.5" title={formatFull(entry.ts)}>
-                        {relativeTime(entry.ts)}
+
+                    {/* Content */}
+                    <div className={`flex-1 min-w-0 ${isLast ? "pb-0" : "pb-4"}`}>
+                      {/* Label + actor + time */}
+                      <div className="flex items-start justify-between gap-2 mb-0.5">
+                        <span className="text-xs font-bold text-gray-700">{cfg.label}</span>
+                        <span className="text-xs text-gray-400 whitespace-nowrap flex-shrink-0">
+                          {actor} · {relTime(entry.ts)}
+                        </span>
+                      </div>
+                      {/* Full date on hover via title */}
+                      <p className="text-sm text-gray-600 leading-snug" title={fullDate(entry.ts)}>
+                        {entry.kind === "comment" ? entry.content : entry.message}
                       </p>
                     </div>
                   </div>
@@ -381,14 +415,14 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
             <div className="flex items-start gap-3">
               <CheckCircle2 size={22} className="text-green-500 flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-bold text-green-800">This task is already delivered 🎉</p>
+                <p className="text-sm font-bold text-green-800">Task delivered 🎉</p>
                 <p className="text-xs text-green-600 mt-0.5">Nothing more needed — great execution!</p>
               </div>
             </div>
             {myTasksUrl && (
-              <a href={myTasksUrl} className="mt-4 flex items-center justify-center gap-1.5 text-sm font-semibold text-green-700 hover:text-green-900 transition-colors">
-                <ArrowLeft size={14} />
-                Back to all your tasks
+              <a href={myTasksUrl}
+                className="mt-4 flex items-center justify-center gap-1.5 text-sm font-semibold text-green-700 hover:text-green-900 transition-colors">
+                <ArrowLeft size={14} /> Back to all your tasks
               </a>
             )}
           </div>
@@ -398,77 +432,53 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
         {submitted === "delivered" && (
           <div className="bg-green-50 border border-green-200 rounded-2xl p-6 text-center">
             <div className="text-4xl mb-3">🎉</div>
-            <p className="text-base font-bold text-green-800">Delivered — well done!</p>
+            <p className="text-base font-bold text-green-800">Delivered — well done, {firstName}!</p>
             <p className="text-xs text-green-600 mt-1">Your team has been notified. Great execution.</p>
-            {myTasksUrl && (
-              <a href={myTasksUrl} className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-green-700 hover:text-green-900 transition-colors">
-                <ArrowLeft size={14} />
-                Back to all your tasks
-              </a>
-            )}
+            {myTasksUrl && <a href={myTasksUrl} className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-green-700 hover:text-green-900 transition-colors"><ArrowLeft size={14} /> Back to all your tasks</a>}
           </div>
         )}
         {submitted === "on_track" && (
           <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center">
-            <TrendingUp size={32} className="text-indigo-500 mx-auto mb-3" />
+            <TrendingUp size={30} className="text-indigo-500 mx-auto mb-3" />
             <p className="text-base font-bold text-indigo-800">Next step logged — keep it up.</p>
             <p className="text-xs text-indigo-600 mt-1">Your progress has been noted by the team.</p>
-            {myTasksUrl && (
-              <a href={myTasksUrl} className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-600 hover:text-indigo-800 transition-colors">
-                <ArrowLeft size={14} />
-                Back to all your tasks
-              </a>
-            )}
+            {myTasksUrl && <a href={myTasksUrl} className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-600 hover:text-indigo-800 transition-colors"><ArrowLeft size={14} /> Back to all your tasks</a>}
           </div>
         )}
         {submitted === "delayed" && (
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center">
-            <Clock size={32} className="text-amber-500 mx-auto mb-3" />
+            <Clock size={30} className="text-amber-500 mx-auto mb-3" />
             <p className="text-base font-bold text-amber-800">Delay noted — team has been informed.</p>
             <p className="text-xs text-amber-600 mt-1">Thank you for keeping everyone in the loop.</p>
-            {myTasksUrl && (
-              <a href={myTasksUrl} className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-amber-700 hover:text-amber-900 transition-colors">
-                <ArrowLeft size={14} />
-                Back to all your tasks
-              </a>
-            )}
+            {myTasksUrl && <a href={myTasksUrl} className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-amber-700 hover:text-amber-900 transition-colors"><ArrowLeft size={14} /> Back to all your tasks</a>}
           </div>
         )}
         {submitted === "blocked" && (
           <div className="bg-red-50 border border-red-200 rounded-2xl p-6 text-center">
-            <AlertTriangle size={32} className="text-red-500 mx-auto mb-3" />
+            <AlertTriangle size={30} className="text-red-500 mx-auto mb-3" />
             <p className="text-base font-bold text-red-800">Blocker reported — team has been alerted.</p>
-            <p className="text-xs text-red-600 mt-1">Someone will follow up with you shortly to unblock.</p>
-            {myTasksUrl && (
-              <a href={myTasksUrl} className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-red-600 hover:text-red-800 transition-colors">
-                <ArrowLeft size={14} />
-                Back to all your tasks
-              </a>
-            )}
+            <p className="text-xs text-red-600 mt-1">Someone will follow up with you shortly.</p>
+            {myTasksUrl && <a href={myTasksUrl} className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-red-600 hover:text-red-800 transition-colors"><ArrowLeft size={14} /> Back to all your tasks</a>}
           </div>
         )}
 
         {/* ── Action panel ── */}
         {task!.status !== "DONE" && !submitted && (
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
-            <p className="text-base font-bold text-gray-800 mb-0.5">Where do things stand?</p>
-            <p className="text-xs text-gray-400 mb-5">Takes 15 seconds — your team sees it immediately.</p>
+            <p className="text-base font-extrabold text-gray-900 mb-0.5">Where do things stand?</p>
+            <p className="text-xs text-gray-400 mb-5">15 seconds — your team sees it immediately.</p>
 
-            {/* 2×2 action grid */}
+            {/* 2×2 grid */}
             <div className="grid grid-cols-2 gap-2.5 mb-4">
-              {(
-                [
-                  { id: "delivered" as const, Icon: CheckCircle2, label: "Delivered ✓",  sub: "I completed it",    selected: "bg-green-600 border-green-600 text-white",   idle: "hover:border-green-300 hover:bg-green-50"   },
-                  { id: "on_track"  as const, Icon: TrendingUp,   label: "On Track",     sub: "Going as planned",  selected: "bg-indigo-600 border-indigo-600 text-white",  idle: "hover:border-indigo-300 hover:bg-indigo-50" },
-                  { id: "delayed"   as const, Icon: Clock,         label: "Delayed",      sub: "Need more time",    selected: "bg-amber-500 border-amber-500 text-white",    idle: "hover:border-amber-300 hover:bg-amber-50"   },
-                  { id: "blocked"   as const, Icon: AlertTriangle, label: "Blocked",      sub: "Stuck, need help",  selected: "bg-red-500 border-red-500 text-white",         idle: "hover:border-red-300 hover:bg-red-50"       },
-                ]
-              ).map(({ id, Icon, label, sub, selected, idle }) => (
-                <button
-                  key={id}
-                  onClick={() => selectAction(id)}
+              {([
+                { id: "delivered" as const, Icon: CheckCircle2, label: "Delivered ✓", sub: "I completed it",   active: "bg-green-600 border-green-600 text-white",  idle: "hover:border-green-300 hover:bg-green-50"   },
+                { id: "on_track"  as const, Icon: TrendingUp,   label: "On Track",    sub: "Going as planned", active: "bg-indigo-600 border-indigo-600 text-white", idle: "hover:border-indigo-300 hover:bg-indigo-50" },
+                { id: "delayed"   as const, Icon: Clock,         label: "Delayed",     sub: "Need more time",   active: "bg-amber-500 border-amber-500 text-white",  idle: "hover:border-amber-300 hover:bg-amber-50"   },
+                { id: "blocked"   as const, Icon: AlertTriangle, label: "Blocked",     sub: "Stuck, need help", active: "bg-red-500 border-red-500 text-white",       idle: "hover:border-red-300 hover:bg-red-50"       },
+              ]).map(({ id, Icon, label, sub, active, idle }) => (
+                <button key={id} onClick={() => selectAction(id)}
                   className={`flex flex-col items-center gap-1.5 py-4 px-2 rounded-2xl border-2 text-center transition-all ${
-                    action === id ? selected : `border-gray-200 text-gray-600 ${idle}`
+                    action === id ? active : `border-gray-200 text-gray-600 ${idle}`
                   }`}
                 >
                   <Icon size={20} />
@@ -478,19 +488,17 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
               ))}
             </div>
 
-            {/* Dynamic input area */}
+            {/* Dynamic input */}
             {action && (
               <div className="space-y-3 pt-3 border-t border-gray-100">
 
-                {/* Delayed reason — mandatory */}
+                {/* Delay reason */}
                 {action === "delayed" && (
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1">
                       Why is it delayed? <span className="text-red-500">*</span>
                     </label>
-                    <p className="text-xs text-gray-400 mb-2">
-                      Helps your team plan — no judgment, just visibility.
-                    </p>
+                    <p className="text-xs text-gray-400 mb-2">Helps your team plan — no judgment, just visibility.</p>
                     <select
                       value={delayReason}
                       onChange={(e) => setDelayReason(e.target.value)}
@@ -503,7 +511,7 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
                   </div>
                 )}
 
-                {/* Text note */}
+                {/* Note */}
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">
                     {action === "delivered" && <>What was delivered? <span className="text-red-500">*</span></>}
@@ -512,14 +520,10 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
                     {action === "blocked"   && <>What exactly is blocking you? <span className="text-red-500">*</span></>}
                   </label>
                   {action === "on_track" && (
-                    <p className="text-xs text-gray-400 mb-1.5">
-                      Be specific — e.g. &ldquo;Will share first draft with team by Thursday&rdquo;
-                    </p>
+                    <p className="text-xs text-gray-400 mb-1.5">Be specific — e.g. &ldquo;Will share first draft with team by Thursday&rdquo;</p>
                   )}
                   {action === "blocked" && (
-                    <p className="text-xs text-gray-400 mb-1.5">
-                      Name the person or thing blocking you so the right help can reach you.
-                    </p>
+                    <p className="text-xs text-gray-400 mb-1.5">Name the person or thing blocking you so the right help can reach you.</p>
                   )}
                   <input
                     type="text"
@@ -527,8 +531,8 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
                     onChange={(e) => setNote(e.target.value)}
                     placeholder={
                       action === "delivered" ? "e.g. Sent pricing deck to client on 21 Mar" :
-                      action === "on_track"  ? "e.g. Will complete first draft by Thursday" :
-                      action === "delayed"   ? "e.g. Client approval expected by 28 Mar" :
+                      action === "on_track"  ? "e.g. Will complete first draft by Thursday"  :
+                      action === "delayed"   ? "e.g. Client approval expected by 28 Mar"      :
                       "e.g. Need finance sign-off from Sandeep before I can proceed"
                     }
                     className="w-full border-2 border-gray-200 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
@@ -536,14 +540,11 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
                   />
                 </div>
 
-                {/* New date (delayed only) */}
+                {/* New date */}
                 {action === "delayed" && (
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1">New target date (optional)</label>
-                    <input
-                      type="date"
-                      value={newDate}
-                      onChange={(e) => setNewDate(e.target.value)}
+                    <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)}
                       className="w-full border-2 border-gray-200 rounded-xl px-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
                     />
                   </div>
@@ -561,22 +562,25 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
                   }`}
                 >
                   {submitting ? "Submitting…" :
-                    action === "delivered" ? "✓ Confirm Delivered" :
-                    action === "on_track"  ? "Log Next Step →"    :
-                    action === "delayed"   ? "Submit Delay"        :
+                    action === "delivered" ? "✓ Confirm Delivered"  :
+                    action === "on_track"  ? "Log Next Step →"      :
+                    action === "delayed"   ? "Submit Delay"          :
                     "Report Blocker"}
                 </button>
 
                 <p className="text-xs text-center text-gray-400 pb-1">
-                  Your update is visible to your team immediately.
+                  Visible to your team immediately.
                 </p>
               </div>
             )}
 
-            {/* Bottom back link */}
+            {/* Back link when no action selected */}
             {!action && myTasksUrl && (
               <div className="mt-4 pt-3 border-t border-gray-100 text-center">
-                <BackLink owner={task!.owner} />
+                <a href={myTasksUrl}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-500 hover:text-indigo-700 transition-colors">
+                  <ArrowLeft size={12} /> Back to all your tasks
+                </a>
               </div>
             )}
           </div>
