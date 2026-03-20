@@ -197,7 +197,7 @@ function TaskCard({ task }: { task: OwnerTask }) {
             <span className="text-xs text-gray-400">{task.function}</span>
           </div>
         </div>
-        <span className="text-xs text-indigo-500 flex-shrink-0 mt-0.5">Update →</span>
+        <span className="text-xs text-indigo-500 flex-shrink-0 mt-0.5 font-medium">View &amp; Update →</span>
       </div>
     </a>
   );
