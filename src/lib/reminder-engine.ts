@@ -9,6 +9,8 @@ import { sendEmailReminder } from "@/lib/email";
 import {
   sendWhatsAppMessage,
   hasReminderBeenSentToday,
+  hasReminderEverBeenSent,
+  hasReminderBeenSentWithinDays,
 } from "@/lib/whatsapp";
 
 export interface ReminderJobResult {
@@ -96,6 +98,12 @@ export async function processReminders(): Promise<ReminderJobResult> {
   const now = new Date();
   const activeTasks = await prisma.task.findMany({
     where: { status: { in: ["OPEN", "DELAYED", "OVERDUE"] } },
+    include: {
+      activities: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+      },
+    },
   });
 
   result.tasks_checked = activeTasks.length;
@@ -106,6 +114,10 @@ export async function processReminders(): Promise<ReminderJobResult> {
     const daysUntilDue = diffDays(now, due); // negative if overdue
     const daysOverdue = -daysUntilDue;
 
+    // Days since last any activity on this task
+    const lastActivityAt = task.activities[0]?.createdAt ?? task.createdAt;
+    const daysSinceActivity = diffDays(lastActivityAt, now);
+
     const taskData = {
       title: task.title,
       owner: task.owner,
@@ -115,6 +127,37 @@ export async function processReminders(): Promise<ReminderJobResult> {
     };
 
     try {
+      // ── Midpoint Check-in ──────────────────────────────────────
+      // Sent exactly once, at the 50% mark of task duration (min 3-day tasks)
+      if (daysUntilDue > 0 && task.status === "OPEN") {
+        const totalDurationDays = diffDays(task.createdAt, due);
+        if (totalDurationDays >= 3) {
+          const midpointMs = task.createdAt.getTime() + (due.getTime() - task.createdAt.getTime()) / 2;
+          const isPastMidpoint = now.getTime() >= midpointMs;
+          if (isPastMidpoint && !(await hasReminderEverBeenSent(task.id, "midpoint_check"))) {
+            await notifyOwner("midpoint_check", task.id, task.ownerPhone, task.ownerEmail, task.owner, taskData);
+            await prisma.activity.create({
+              data: { taskId: task.id, type: "REMINDER_SENT", actor: "system", message: "Midpoint check-in sent — awaiting owner response" },
+            });
+            result.reminders_sent++;
+            result.detail.push(`[midpoint_check] ${task.title} → ${task.owner} (${Math.round(totalDurationDays / 2)}d midpoint)`);
+          }
+        }
+      }
+
+      // ── Silence Check (pre-deadline) ───────────────────────────
+      // Task is due within 5 days, no activity in 4+ days → alert owner
+      if (daysUntilDue > 0 && daysUntilDue <= 5 && daysSinceActivity >= 4) {
+        if (!(await hasReminderBeenSentWithinDays(task.id, "silence_check", 2))) {
+          await notifyOwner("silence_check", task.id, task.ownerPhone, task.ownerEmail, task.owner, taskData);
+          await prisma.activity.create({
+            data: { taskId: task.id, type: "REMINDER_SENT", actor: "system", message: `Silence check sent — no activity for ${daysSinceActivity} days, due in ${daysUntilDue}` },
+          });
+          result.reminders_sent++;
+          result.detail.push(`[silence_check] ${task.title} → ${task.owner} (silent ${daysSinceActivity}d, due in ${daysUntilDue}d)`);
+        }
+      }
+
       // ── Due in 2 days ──────────────────────────────────────────
       if (daysUntilDue === 2) {
         if (!(await hasReminderBeenSentToday(task.id, "due_in_2_days"))) {

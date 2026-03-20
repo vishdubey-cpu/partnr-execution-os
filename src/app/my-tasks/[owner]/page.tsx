@@ -12,7 +12,19 @@ interface OwnerTask {
   daysOverdue: number | null;
 }
 
-async function getOwnerTasks(owner: string): Promise<{ owner: string; tasks: OwnerTask[] }> {
+interface ReliabilityStats {
+  doneTasks: number;
+  onTimeCount: number;
+  lateCount: number;
+  onTimeRate: number | null;
+  totalDelayCount: number;
+  reliabilityLabel: "STRONG" | "WATCH" | "AT_RISK" | null;
+  patternInsight: string;
+}
+
+async function getOwnerTasks(
+  owner: string
+): Promise<{ owner: string; tasks: OwnerTask[]; reliability: ReliabilityStats }> {
   const res = await fetch(
     `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/api/my-tasks/${encodeURIComponent(owner)}`,
     { cache: "no-store" }
@@ -34,12 +46,22 @@ const priorityDot: Record<string, string> = {
   LOW:      "bg-gray-300",
 };
 
+const reliabilityConfig: Record<
+  "STRONG" | "WATCH" | "AT_RISK",
+  { label: string; bg: string; border: string; text: string; bar: string }
+> = {
+  STRONG:  { label: "Strong Executor",  bg: "bg-green-50",  border: "border-green-200", text: "text-green-700",  bar: "bg-green-500"  },
+  WATCH:   { label: "Needs Attention",  bg: "bg-amber-50",  border: "border-amber-200", text: "text-amber-700",  bar: "bg-amber-400"  },
+  AT_RISK: { label: "At Risk",          bg: "bg-red-50",    border: "border-red-200",   text: "text-red-700",    bar: "bg-red-500"    },
+};
+
 export default async function MyTasksPage({ params }: { params: { owner: string } }) {
   const ownerName = decodeURIComponent(params.owner);
-  const { tasks } = await getOwnerTasks(ownerName);
+  const { tasks, reliability } = await getOwnerTasks(ownerName);
 
   const overdue = tasks.filter((t) => t.isOverdue);
   const onTrack = tasks.filter((t) => !t.isOverdue);
+  const relCfg = reliability.reliabilityLabel ? reliabilityConfig[reliability.reliabilityLabel] : null;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -55,6 +77,45 @@ export default async function MyTasksPage({ params }: { params: { owner: string 
       </div>
 
       <div className="px-4 py-5 max-w-lg mx-auto space-y-5">
+
+        {/* Reliability score card — only shown when there's history to report */}
+        {relCfg && (
+          <div className={`rounded-xl border ${relCfg.border} ${relCfg.bg} p-4`}>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Your Execution Score</p>
+              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${relCfg.bg} ${relCfg.text} border ${relCfg.border}`}>
+                {relCfg.label}
+              </span>
+            </div>
+
+            {reliability.onTimeRate !== null && (
+              <div className="mb-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-gray-500">On-time delivery</span>
+                  <span className={`text-sm font-bold ${relCfg.text}`}>{reliability.onTimeRate}%</span>
+                </div>
+                <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${relCfg.bar}`}
+                    style={{ width: `${reliability.onTimeRate}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center gap-4 text-xs text-gray-500 mb-2">
+              <span>{reliability.doneTasks} completed</span>
+              {reliability.totalDelayCount > 0 && (
+                <span className="text-amber-600 font-medium">{reliability.totalDelayCount} delay{reliability.totalDelayCount !== 1 ? "s" : ""}</span>
+              )}
+              {reliability.lateCount > 0 && (
+                <span className="text-red-500 font-medium">{reliability.lateCount} late</span>
+              )}
+            </div>
+
+            <p className="text-xs text-gray-500 italic">{reliability.patternInsight}</p>
+          </div>
+        )}
 
         {/* Overdue section */}
         {overdue.length > 0 && (
@@ -101,7 +162,6 @@ export default async function MyTasksPage({ params }: { params: { owner: string 
 }
 
 function TaskCard({ task }: { task: OwnerTask }) {
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
   const cfg = statusConfig[task.isOverdue ? "OVERDUE" : task.status] ?? statusConfig.OPEN;
   const dot = priorityDot[task.priority] ?? priorityDot.MEDIUM;
 

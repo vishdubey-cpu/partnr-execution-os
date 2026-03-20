@@ -72,3 +72,32 @@ export async function hasReminderBeenSentToday(
   });
   return !!existing;
 }
+
+/**
+ * Check whether a reminder type has EVER been sent for this task.
+ * Used for one-shot sends like the midpoint check (send exactly once per task).
+ */
+export async function hasReminderEverBeenSent(
+  taskId: string,
+  type: string
+): Promise<boolean> {
+  const existing = await prisma.reminder.findFirst({ where: { taskId, type } });
+  return !!existing;
+}
+
+/**
+ * Check whether a reminder type was sent within the last N days.
+ * Used for silence checks — prevents spamming every day.
+ */
+export async function hasReminderBeenSentWithinDays(
+  taskId: string,
+  type: string,
+  days: number
+): Promise<boolean> {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const existing = await prisma.reminder.findFirst({
+    where: { taskId, type, sentAt: { gte: cutoff } },
+  });
+  return !!existing;
+}

@@ -69,7 +69,9 @@ export type EmailReminderType =
   | "due_today"
   | "overdue_1_day"
   | "escalated_to_manager"
-  | "escalated_to_admin";
+  | "escalated_to_admin"
+  | "midpoint_check"
+  | "silence_check";
 
 interface TaskData {
   id: string;
@@ -92,6 +94,8 @@ function buildSubject(type: EmailReminderType, taskData: TaskData): string {
     case "overdue_1_day":    return `Overdue: "${taskData.title}" was due ${due}`;
     case "escalated_to_manager": return `Escalation: Task overdue — ${taskData.title}`;
     case "escalated_to_admin":   return `[Admin] Task escalated: ${taskData.title}`;
+    case "midpoint_check":       return `Midpoint check-in: "${taskData.title}" — how's it going?`;
+    case "silence_check":        return `⚠️ No update received: "${taskData.title}" is due soon`;
   }
 }
 
@@ -175,6 +179,22 @@ function buildBody(
         <p>A task has been escalated to admin level (7+ days overdue):</p>
         <p style="font-weight: 600; font-size: 16px;">${taskData.title}</p>
         <p>Owner: <strong>${taskData.owner}</strong><br/>Was due: ${due}</p>`);
+
+    case "midpoint_check":
+      return wrap(`
+        <p>Hi ${recipientName},</p>
+        <p>You're halfway to the deadline on this task:</p>
+        <p style="font-weight: 600; font-size: 16px;">${taskData.title}</p>
+        <p style="color: #555;">Due: <strong>${due}</strong></p>
+        <p>How is it going? Please click the link below to update your status — and if you're on track, tell us your next concrete step.</p>`);
+
+    case "silence_check":
+      return wrap(`
+        <p>Hi ${recipientName},</p>
+        <p>We haven't received an update on this task for a while, and it's due soon:</p>
+        <p style="font-weight: 600; font-size: 16px;">${taskData.title}</p>
+        <p style="color: #DC2626;">Due: <strong>${due}</strong></p>
+        <p>Please click below to update your status — are you on track, blocked, or delayed?</p>`);
   }
 }
 

@@ -9,6 +9,8 @@ export type ReminderType =
   | "escalated_to_admin"
   | "weekly_summary"
   | "delayed_followup"
+  | "midpoint_check"
+  | "silence_check"
   | "MANUAL";
 
 interface TaskData {
@@ -43,6 +45,12 @@ export const templates: Record<
 
   delayed_followup: ({ title, owner }) =>
     `Hi ${owner}, you marked *${title}* as DELAYED.\n\nPlease reply with a revised due date (e.g. "22 Mar") so we can update the record.`,
+
+  midpoint_check: ({ title, owner, dueDate }) =>
+    `Hi ${owner},\n\n📍 *Midpoint Check-in*\n\nYou're halfway to the deadline on:\n\n*${title}*\nDue: ${formatDate(dueDate)}\n\nHow is it going?\n• *ON TRACK* — progressing well _(add your next step after a dash)_\n• *BLOCKED* — need help unblocking\n• *DELAYED* — need more time`,
+
+  silence_check: ({ title, owner, dueDate }) =>
+    `Hi ${owner},\n\n🔕 *No update received* on this task for a while:\n\n*${title}*\nDue soon: ${formatDate(dueDate)}\n\nPlease reply:\n• *ON TRACK* — progressing\n• *BLOCKED* — stuck, need help\n• *DELAYED* — need more time`,
 };
 
 export function buildWeeklySummaryMessage(data: {

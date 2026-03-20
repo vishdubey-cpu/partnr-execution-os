@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseTwilioWebhook, parseMockWebhook } from "@/lib/whatsapp/inbound-parser";
-import { sendWhatsAppMessage, hasReminderBeenSentToday } from "@/lib/whatsapp";
+import { sendWhatsAppMessage, sendRawWhatsAppMessage, hasReminderBeenSentToday } from "@/lib/whatsapp";
 
 /**
  * POST /api/webhooks/whatsapp
@@ -75,6 +75,44 @@ export async function POST(req: NextRequest) {
         },
       });
       return NextResponse.json({ received: true, action: "marked_done", taskId: task.id });
+    }
+
+    if (parsed.replyType === "ON_TRACK") {
+      const nextAction = parsed.nextAction;
+      const activityMsg = nextAction
+        ? `${task.owner} confirmed ON TRACK via WhatsApp — next step: ${nextAction}`
+        : `${task.owner} confirmed ON TRACK via WhatsApp`;
+
+      await prisma.activity.create({
+        data: {
+          taskId: task.id,
+          type: "ON_TRACK_UPDATE",
+          actor: task.owner,
+          message: activityMsg,
+          metadata: JSON.stringify({ from: parsed.from, body: parsed.body, nextAction }),
+        },
+      });
+      await prisma.reminder.create({
+        data: {
+          taskId: task.id,
+          type: "INBOUND_REPLY",
+          channel: "WHATSAPP",
+          recipientName: task.owner,
+          recipientPhone: parsed.from,
+          provider: isTwilio ? "TWILIO" : "MOCK",
+          status: "RECEIVED",
+          message: parsed.body,
+          metadata: JSON.stringify({ replyType: "ON_TRACK", nextAction }),
+        },
+      });
+
+      // Send acknowledgement back
+      const ackMsg = nextAction
+        ? `Thanks ${task.owner} 👍 On track noted. Next step logged: "${nextAction}". If anything changes, reply *BLOCKED* or *DELAYED*.`
+        : `Thanks ${task.owner} 👍 On track noted. If anything changes, reply *BLOCKED* or *DELAYED*.`;
+      await sendRawWhatsAppMessage(task.id, task.ownerPhone, task.owner, ackMsg, "MANUAL");
+
+      return NextResponse.json({ received: true, action: "on_track_logged", taskId: task.id });
     }
 
     if (parsed.replyType === "DELAYED") {

@@ -3,13 +3,14 @@
  * Returns a normalised reply event.
  */
 
-export type InboundReplyType = "DONE" | "DELAYED" | "NEED_HELP" | "UNKNOWN";
+export type InboundReplyType = "DONE" | "DELAYED" | "NEED_HELP" | "ON_TRACK" | "UNKNOWN";
 
 export interface ParsedInboundMessage {
   from: string;       // phone number (e.g. +919876543210)
   body: string;       // raw message text
   replyType: InboundReplyType;
-  revisedDate?: string; // extracted date if DELAYED reply contains one
+  revisedDate?: string;  // extracted date if DELAYED reply contains one
+  nextAction?: string;   // extracted next step if ON_TRACK reply contains one
   rawPayload: Record<string, string>;
 }
 
@@ -21,8 +22,9 @@ export function parseTwilioWebhook(
   const rawText = (body.Body || "").trim();
   const replyType = classifyReply(rawText);
   const revisedDate = replyType === "DELAYED" ? extractDateFromText(rawText) : undefined;
+  const nextAction = replyType === "ON_TRACK" ? extractNextAction(rawText) : undefined;
 
-  return { from, body: rawText, replyType, revisedDate, rawPayload: body };
+  return { from, body: rawText, replyType, revisedDate, nextAction, rawPayload: body };
 }
 
 /** Parse mock/test inbound payload */
@@ -33,8 +35,9 @@ export function parseMockWebhook(
   const rawText = (body.body || body.Body || "").trim();
   const replyType = classifyReply(rawText);
   const revisedDate = replyType === "DELAYED" ? extractDateFromText(rawText) : undefined;
+  const nextAction = replyType === "ON_TRACK" ? extractNextAction(rawText) : undefined;
 
-  return { from, body: rawText, replyType, revisedDate, rawPayload: body };
+  return { from, body: rawText, replyType, revisedDate, nextAction, rawPayload: body };
 }
 
 function classifyReply(text: string): InboundReplyType {
@@ -42,7 +45,14 @@ function classifyReply(text: string): InboundReplyType {
   if (upper === "DONE" || upper === "COMPLETED" || upper === "1") return "DONE";
   if (upper.startsWith("DELAYED") || upper === "DELAY" || upper === "2") return "DELAYED";
   if (upper.startsWith("NEED HELP") || upper === "HELP" || upper === "3") return "NEED_HELP";
+  if (upper.startsWith("ON TRACK") || upper === "ONTRACK" || upper === "ON_TRACK" || upper === "4") return "ON_TRACK";
   return "UNKNOWN";
+}
+
+/** Extract "next step" text from "ON TRACK — will finish X by Y" or "ON TRACK: doing X" */
+function extractNextAction(text: string): string | undefined {
+  const match = text.match(/on\s*track\s*[:\-–—]\s*(.+)/i);
+  return match ? match[1].trim() : undefined;
 }
 
 /** Try to extract a date string from messages like "DELAYED by 22 Mar" or "DELAYED - will finish by Friday" */
