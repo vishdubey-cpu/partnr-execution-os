@@ -1,9 +1,10 @@
 import { DashboardStats } from "@/types";
 import { OwnerStatsTable } from "@/components/dashboard/OwnerStatsTable";
+import { PulseDecisionCards } from "@/components/dashboard/PulseDecisionCards";
 import { timeAgo } from "@/lib/utils";
 import {
   AlertTriangle, Clock, TrendingUp, CheckSquare,
-  ArrowUpCircle, MessageCircle, ChevronDown, Skull,
+  ArrowUpCircle, MessageCircle, ChevronDown, Skull, Users,
 } from "lucide-react";
 
 async function getDashboard(): Promise<DashboardStats> {
@@ -15,33 +16,90 @@ async function getDashboard(): Promise<DashboardStats> {
   return res.json();
 }
 
-const urgencyBorder = { critical: "border-l-red-600", high: "border-l-orange-500", medium: "border-l-amber-400" };
-const urgencyDot = { critical: "bg-red-500", high: "bg-orange-400", medium: "bg-amber-400" };
+const headlineStates = {
+  calm: {
+    bg: "bg-green-50", border: "border-green-200", dotColor: "bg-green-500", pulse: false,
+    badge: "bg-green-100 text-green-700", badgeLabel: "On Track",
+    headline: (_d: DashboardStats) => "Execution is largely on track today.",
+    sub: (d: DashboardStats) =>
+      d.runningFineCount > 0
+        ? `${d.runningFineCount} task${d.runningFineCount !== 1 ? "s" : ""} running cleanly. No intervention needed.`
+        : "No critical blockers or escalations today.",
+  },
+  watchful: {
+    bg: "bg-amber-50", border: "border-amber-200", dotColor: "bg-amber-400", pulse: false,
+    badge: "bg-amber-100 text-amber-700", badgeLabel: "Watch Closely",
+    headline: (_d: DashboardStats) => "A few important things are drifting.",
+    sub: (d: DashboardStats) =>
+      `${d.watchList.length} task${d.watchList.length !== 1 ? "s" : ""} may need intervention this week before they escalate.`,
+  },
+  bad: {
+    bg: "bg-orange-50", border: "border-orange-200", dotColor: "bg-orange-500", pulse: true,
+    badge: "bg-orange-100 text-orange-700", badgeLabel: "Execution Risk",
+    headline: (_d: DashboardStats) => "Execution risk is building.",
+    sub: (d: DashboardStats) =>
+      `${d.needsYouNow.length} item${d.needsYouNow.length !== 1 ? "s" : ""} blocked${d.zombieTasks.length > 0 ? ` and ${d.zombieTasks.length} tasks going stale` : ""}. Your input is needed.`,
+  },
+  critical: {
+    bg: "bg-red-50", border: "border-red-200", dotColor: "bg-red-500", pulse: true,
+    badge: "bg-red-100 text-red-700", badgeLabel: "Attention Required",
+    headline: (_d: DashboardStats) => "Leadership attention required today.",
+    sub: (d: DashboardStats) =>
+      `${d.needsYouNow.length} critical item${d.needsYouNow.length !== 1 ? "s" : ""} cannot be resolved without your input.`,
+  },
+};
+
+const reliabilityConfig = {
+  AT_RISK: { label: "At Risk", bg: "bg-red-50",   border: "border-red-200",   badge: "bg-red-100 text-red-700"   },
+  WATCH:   { label: "Watch",   bg: "bg-amber-50", border: "border-amber-200", badge: "bg-amber-100 text-amber-700" },
+  STRONG:  { label: "Strong",  bg: "bg-green-50", border: "border-green-200", badge: "bg-green-100 text-green-700" },
+};
 
 export default async function DashboardPage() {
   const data = await getDashboard();
 
+  const state = headlineStates[data.headlineState ?? "calm"];
   const hasUrgent = data.needsYouNow.length > 0;
   const hasWatchList = data.watchList.length > 0;
   const hasZombies = data.zombieTasks.length > 0;
+  const hasPeopleFlags = data.peopleReliability?.some(
+    (p) => p.reliabilityLabel === "AT_RISK" || p.reliabilityLabel === "WATCH"
+  );
 
   return (
     <div className="p-4 md:p-6 max-w-screen-xl mx-auto">
 
-      {/* ── Top Line ──────────────────────────────────────────── */}
-      <div className="mb-6">
-        <h1 className="text-xl font-bold text-gray-900">
-          {hasUrgent ? "⚠️ Needs your attention" : hasWatchList ? "👀 Watch closely" : "✅ Execution on track"}
-        </h1>
-        <p className="text-sm text-gray-500 mt-1">{data.topLine}</p>
+      {/* ── Headline Strip ─────────────────────────────────────────── */}
+      <div className={`${state.bg} border ${state.border} rounded-xl px-5 py-4 mb-6`}>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="mt-1 flex-shrink-0">
+              <div className={`w-2.5 h-2.5 rounded-full ${state.dotColor} ${state.pulse ? "animate-pulse" : ""}`} />
+            </div>
+            <div>
+              <p className="text-base font-bold text-gray-900 leading-snug">
+                {state.headline(data)}
+              </p>
+              <p className="text-sm text-gray-500 mt-0.5">{state.sub(data)}</p>
+            </div>
+          </div>
+          <div className="flex-shrink-0 flex flex-col items-end gap-1.5">
+            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${state.badge}`}>
+              {state.badgeLabel}
+            </span>
+            <span className="text-xs text-gray-400">
+              {new Date().toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
+            </span>
+          </div>
+        </div>
       </div>
 
-      {/* ── Stats Row ──────────────────────────────────────────── */}
+      {/* ── Stats Row ──────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         {[
-          { label: "Open Tasks", value: data.totalOpenTasks, color: "text-blue-600", bg: "bg-blue-50", icon: <CheckSquare size={18} /> },
-          { label: "Overdue", value: data.overdueTasks, color: "text-red-600", bg: "bg-red-50", icon: <AlertTriangle size={18} /> },
-          { label: "Due Today", value: data.dueTodayTasks, color: "text-amber-600", bg: "bg-amber-50", icon: <Clock size={18} /> },
+          { label: "Open Tasks",   value: data.totalOpenTasks,          color: "text-blue-600",  bg: "bg-blue-50",  icon: <CheckSquare size={18} /> },
+          { label: "Overdue",      value: data.overdueTasks,            color: "text-red-600",   bg: "bg-red-50",   icon: <AlertTriangle size={18} /> },
+          { label: "Due Today",    value: data.dueTodayTasks,           color: "text-amber-600", bg: "bg-amber-50", icon: <Clock size={18} /> },
           { label: "On-Time Rate", value: `${data.onTimeClosureRate}%`, color: "text-green-600", bg: "bg-green-50", icon: <TrendingUp size={18} /> },
         ].map((s) => (
           <div key={s.label} className={`${s.bg} rounded-xl p-4 flex items-center gap-3`}>
@@ -54,74 +112,114 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      {/* ── Zone 1: Needs You Now ──────────────────────────────── */}
+      {/* ── Section 2: Needs Your Decision ─────────────────────────── */}
       {hasUrgent && (
-        <div className="mb-5">
-          <div className="flex items-center gap-2 mb-3">
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-1">
             <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
             <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">
-              Needs Your Decision — {data.needsYouNow.length} item{data.needsYouNow.length > 1 ? "s" : ""}
+              Needs Your Decision
             </h2>
+            <span className="ml-1 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-semibold">
+              {data.needsYouNow.length}
+            </span>
           </div>
-          <div className="space-y-2">
-            {data.needsYouNow.map((t) => (
-              <a
-                key={t.id}
-                href={`/tasks/${t.id}`}
-                className={`flex items-start justify-between bg-white border-l-4 ${urgencyBorder[t.urgency]} rounded-r-xl border border-l-0 border-gray-200 px-4 py-3 hover:bg-gray-50 transition-colors`}
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${urgencyDot[t.urgency]}`} />
-                    <p className="text-sm font-semibold text-gray-900 truncate">{t.title}</p>
-                  </div>
-                  <p className="text-xs text-gray-500 ml-3.5">{t.owner} · {t.reason}</p>
-                </div>
-                <span className="text-xs text-indigo-600 font-medium ml-3 flex-shrink-0">Decide →</span>
-              </a>
-            ))}
-          </div>
+          <p className="text-xs text-gray-400 mb-3 ml-4">
+            These items require intervention, not monitoring.
+          </p>
+          <PulseDecisionCards tasks={data.needsYouNow} />
         </div>
       )}
 
-      {/* ── Zone 2: Watch List ──────────────────────────────────── */}
+      {/* ── Section 3: What Is Drifting ────────────────────────────── */}
       {hasWatchList && (
-        <div className="mb-5">
-          <div className="flex items-center gap-2 mb-3">
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-1">
             <div className="w-2.5 h-2.5 rounded-full bg-amber-400" />
             <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">
-              Watch This Week — {data.watchList.length} item{data.watchList.length > 1 ? "s" : ""}
+              What Is Drifting
             </h2>
+            <span className="ml-1 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-semibold">
+              {data.watchList.length}
+            </span>
           </div>
+          <p className="text-xs text-gray-400 mb-3 ml-4">
+            Not broken yet — but moving in the wrong direction.
+          </p>
           <div className="space-y-2">
             {data.watchList.map((t) => (
               <a
                 key={t.id}
                 href={`/tasks/${t.id}`}
-                className="flex items-start justify-between bg-white border-l-4 border-l-amber-400 rounded-r-xl border border-l-0 border-gray-200 px-4 py-3 hover:bg-gray-50 transition-colors"
+                className="flex items-start justify-between bg-white border-l-4 border-l-amber-400 rounded-r-xl border border-l-0 border-gray-200 px-4 py-3 hover:bg-amber-50 transition-colors"
               >
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-gray-900 truncate">{t.title}</p>
-                  <p className="text-xs text-gray-500">{t.owner} · {t.reason}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{t.owner} · {t.reason}</p>
                 </div>
-                <span className="text-xs text-gray-400 ml-3 flex-shrink-0">View →</span>
+                <span className="text-xs text-gray-400 ml-3 flex-shrink-0 mt-0.5">Watch →</span>
               </a>
             ))}
           </div>
         </div>
       )}
 
-      {/* ── Zone 3: Zombie Tasks ────────────────────────────────── */}
+      {/* ── Section 4: People Requiring Attention ─────────────────── */}
+      {hasPeopleFlags && data.peopleReliability && (
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-1">
+            <Users size={14} className="text-gray-500" />
+            <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">
+              People Requiring Attention
+            </h2>
+          </div>
+          <p className="text-xs text-gray-400 mb-3 ml-5">
+            Execution patterns matter more than isolated misses.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {data.peopleReliability.map((person) => {
+              const cfg = reliabilityConfig[person.reliabilityLabel];
+              return (
+                <div key={person.owner} className={`${cfg.bg} border ${cfg.border} rounded-xl p-4`}>
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">{person.owner}</p>
+                      <p className="text-xs text-gray-400">{person.function}</p>
+                    </div>
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cfg.badge}`}>
+                      {cfg.label}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs mb-2">
+                    <span className="text-gray-500">{person.activeTasks} active</span>
+                    {person.onTimeRate > 0 && <span className="text-gray-500">{person.onTimeRate}% on-time</span>}
+                    {person.delayed > 0 && <span className="text-amber-600 font-medium">{person.delayed} delayed</span>}
+                    {person.silent > 0 && <span className="text-red-500 font-medium">{person.silent} silent</span>}
+                  </div>
+                  <p className="text-xs text-gray-600 italic mb-2 leading-relaxed">{person.patternInsight}</p>
+                  {person.suggestedAction && (
+                    <p className="text-xs text-gray-500">
+                      <span className="font-semibold not-italic">Action:</span> {person.suggestedAction}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Zombie Tasks ────────────────────────────────────────────── */}
       {hasZombies && (
         <div className="mb-5">
           <div className="flex items-center gap-2 mb-3">
             <Skull size={14} className="text-gray-400" />
             <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">
-              Zombie Tasks — {data.zombieTasks.length} item{data.zombieTasks.length > 1 ? "s" : ""} with no activity in 21+ days
+              Zombie Tasks — {data.zombieTasks.length} with no activity in 21+ days
             </h2>
           </div>
           <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2">
-            <p className="text-xs text-gray-500 mb-2">These tasks are stale. Close, reassign, or break them down before they become noise.</p>
+            <p className="text-xs text-gray-500 mb-2">Close, reassign, or break them down before they become noise.</p>
             {data.zombieTasks.map((t) => (
               <a
                 key={t.id}
@@ -139,7 +237,7 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {/* ── Zone 4: Running Fine ────────────────────────────────── */}
+      {/* ── Running Fine ────────────────────────────────────────────── */}
       {data.runningFineCount > 0 && (
         <details className="mb-5 group">
           <summary className="flex items-center gap-2 cursor-pointer list-none">
@@ -149,13 +247,13 @@ export default async function DashboardPage() {
             </span>
             <ChevronDown size={14} className="text-gray-400 ml-1 group-open:rotate-180 transition-transform" />
           </summary>
-          <p className="text-xs text-gray-400 mt-2 ml-4">These tasks are on track. No action needed.</p>
+          <p className="text-xs text-gray-400 mt-2 ml-4">These tasks are progressing. No action needed.</p>
         </details>
       )}
 
       <hr className="my-6 border-gray-100" />
 
-      {/* ── Owner Execution Scorecard ────────────────────────────── */}
+      {/* ── Execution Scorecard ─────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-gray-200 mb-5">
         <div className="px-5 py-4 border-b border-gray-100">
           <h2 className="text-sm font-semibold text-gray-800">Execution Scorecard by Owner</h2>
@@ -166,9 +264,8 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Bottom Row ──────────────────────────────────────────── */}
+      {/* ── Bottom Row ──────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {/* Needs Escalation */}
         <div id="escalation" className="bg-white rounded-xl border border-gray-200">
           <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
             <ArrowUpCircle size={14} className="text-orange-500" />
@@ -182,7 +279,9 @@ export default async function DashboardPage() {
               <p className="text-sm text-gray-400">No tasks pending escalation</p>
             ) : (
               data.needsEscalation.map((task) => {
-                const daysOverdue = task.dueDate ? Math.floor((Date.now() - new Date(task.dueDate).getTime()) / (1000 * 60 * 60 * 24)) : 0;
+                const daysOverdue = task.dueDate
+                  ? Math.floor((Date.now() - new Date(task.dueDate).getTime()) / (1000 * 60 * 60 * 24))
+                  : 0;
                 return (
                   <a key={task.id} href={`/tasks/${task.id}`} className="flex items-center justify-between p-2.5 rounded bg-orange-50 hover:bg-orange-100 transition-colors">
                     <div className="min-w-0">
@@ -197,7 +296,6 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        {/* Recent Reminders */}
         <div className="bg-white rounded-xl border border-gray-200">
           <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
             <MessageCircle size={14} className="text-indigo-500" />

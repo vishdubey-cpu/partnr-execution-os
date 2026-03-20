@@ -68,6 +68,9 @@ export interface PulseTask {
   dueDate: string | null;
   reason: string;
   urgency: "critical" | "high" | "medium";
+  severityTag: "CRITICAL" | "ESCALATED" | "REPEATED_DELAY" | "BLOCKED";
+  situation: string;
+  whyItMatters?: string;
 }
 
 export interface ZombieTask {
@@ -76,6 +79,18 @@ export interface ZombieTask {
   owner: string;
   dueDate: string | null;
   daysSinceActivity: number;
+}
+
+export interface PersonReliability {
+  owner: string;
+  function: string;
+  reliabilityLabel: "AT_RISK" | "WATCH" | "STRONG";
+  activeTasks: number;
+  onTimeRate: number;
+  delayed: number;
+  silent: number;
+  patternInsight: string;
+  suggestedAction?: string;
 }
 
 export interface DashboardStats {
@@ -96,6 +111,8 @@ export interface DashboardStats {
   zombieTasks: ZombieTask[];
   runningFineCount: number;
   topLine: string;
+  headlineState: "calm" | "watchful" | "bad" | "critical";
+  peopleReliability: PersonReliability[];
 }
 
 export interface OwnerStat {

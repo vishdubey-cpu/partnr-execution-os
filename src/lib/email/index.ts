@@ -76,6 +76,7 @@ interface TaskData {
   title: string;
   owner: string;
   dueDate: Date | string;
+  source?: string | null;
 }
 
 // ── Templates ─────────────────────────────────────────────────────────
@@ -105,13 +106,25 @@ function buildBody(
     : "TBD";
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
   const taskUrl = `${baseUrl}/task-view/${taskData.id}`;
+  const myTasksUrl = `${baseUrl}/my-tasks/${encodeURIComponent(taskData.owner)}`;
+
+  const sourceBlock = taskData.source
+    ? `<div style="background:#F8FAFC;border-left:3px solid #CBD5E1;padding:8px 12px;margin:12px 0;border-radius:0 4px 4px 0;">
+        <p style="margin:0;font-size:11px;color:#9CA3AF;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;">Context from meeting</p>
+        <p style="margin:0;font-size:12px;color:#555;font-style:italic;">&ldquo;${taskData.source}&rdquo;</p>
+       </div>`
+    : "";
 
   const wrap = (content: string) => `
     <div style="font-family: -apple-system, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #111;">
       ${content}
+      ${sourceBlock}
       <p style="margin-top: 24px;">
-        <a href="${taskUrl}" style="background: #4F46E5; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-size: 14px;">
-          View Task →
+        <a href="${taskUrl}" style="background: #4F46E5; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-size: 14px; margin-right: 12px;">
+          Update this task →
+        </a>
+        <a href="${myTasksUrl}" style="color: #4F46E5; font-size: 13px; text-decoration: none;">
+          View all your tasks
         </a>
       </p>
       <p style="margin-top: 32px; font-size: 12px; color: #888;">Partnr Execution OS</p>

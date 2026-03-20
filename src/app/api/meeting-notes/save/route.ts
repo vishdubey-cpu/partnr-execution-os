@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
           task.id,
           t.ownerEmail,
           task.owner,
-          { id: task.id, title: task.title, owner: task.owner, dueDate: task.dueDate ?? new Date() }
+          { id: task.id, title: task.title, owner: task.owner, dueDate: task.dueDate ?? new Date(), source: task.source }
         ).catch((e) => console.error("[email] task_assigned failed:", e));
       }
     }

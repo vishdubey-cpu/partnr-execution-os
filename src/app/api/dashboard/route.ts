@@ -1,7 +1,37 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isToday, isBefore } from "date-fns";
-import type { PulseTask, ZombieTask } from "@/types";
+import type { PulseTask, ZombieTask, PersonReliability } from "@/types";
+
+function getSeverityTag(daysOverdue: number, delays: number, status: string): PulseTask["severityTag"] {
+  if (status === "BLOCKED") return "BLOCKED";
+  if (delays >= 3) return "ESCALATED";
+  if (delays >= 1) return "REPEATED_DELAY";
+  return "CRITICAL";
+}
+
+function getSituation(owner: string, daysOverdue: number, delays: number, silent: boolean): string {
+  if (delays >= 3) {
+    return `${owner} has delayed this ${delays} times. The task is ${daysOverdue > 0 ? `${daysOverdue} days past due` : "still open"} with no clear plan forward.`;
+  }
+  if (silent && daysOverdue >= 7) {
+    return `No update has come in from ${owner} for ${daysOverdue} days. The task is overdue and unacknowledged.`;
+  }
+  if (daysOverdue >= 3) {
+    return `This task is ${daysOverdue} days overdue. ${owner} has not provided an updated timeline.`;
+  }
+  return `This item requires a decision. ${owner} is the assigned owner and has not responded.`;
+}
+
+function getWhyItMatters(priority: string, func: string, daysOverdue: number): string {
+  if (priority === "CRITICAL") return "This is a critical priority item. Delay has cascading impact on the team.";
+  if (func === "HR" || func === "People") return "May affect hiring targets or people-related commitments.";
+  if (func === "Finance") return "Financial or budget decisions downstream may be affected.";
+  if (func === "Operations") return "Operational execution depends on this being resolved.";
+  if (func === "Sales") return "Sales pipeline or revenue commitments may be at risk.";
+  if (daysOverdue >= 14) return "Extended overdue period suggests a systemic blocker, not just a delay.";
+  return "Continued delay affects team delivery commitments.";
+}
 
 const isOverdue = (dueDate: Date | null, status: string) =>
   status === "OVERDUE" || (status !== "DONE" && !!dueDate && isBefore(dueDate, new Date()));
@@ -72,6 +102,9 @@ export async function GET() {
           dueDate: t.dueDate?.toISOString() ?? null,
           reason: `${daysOverdue}d overdue — no response from owner`,
           urgency: daysOverdue >= 14 ? "critical" : "high",
+          severityTag: getSeverityTag(daysOverdue, delays, t.status),
+          situation: getSituation(t.owner, daysOverdue, delays, silent),
+          whyItMatters: getWhyItMatters(t.priority, t.function, daysOverdue),
         });
       } else if (delays >= 3) {
         needsYouNow.push({
@@ -79,6 +112,9 @@ export async function GET() {
           dueDate: t.dueDate?.toISOString() ?? null,
           reason: `Delayed ${delays} times — needs your decision`,
           urgency: "high",
+          severityTag: "ESCALATED",
+          situation: getSituation(t.owner, daysOverdue, delays, silent),
+          whyItMatters: getWhyItMatters(t.priority, t.function, daysOverdue),
         });
       } else if (isOverdue(t.dueDate, t.status) && daysOverdue >= 3 && t.escalationLevel < 1) {
         needsYouNow.push({
@@ -86,6 +122,9 @@ export async function GET() {
           dueDate: t.dueDate?.toISOString() ?? null,
           reason: `${daysOverdue}d overdue — escalation pending`,
           urgency: "high",
+          severityTag: getSeverityTag(daysOverdue, delays, t.status),
+          situation: getSituation(t.owner, daysOverdue, delays, silent),
+          whyItMatters: getWhyItMatters(t.priority, t.function, daysOverdue),
         });
       }
       // Zombie tasks: no activity in 21+ days
@@ -98,11 +137,14 @@ export async function GET() {
       }
       // Watch List: due in 3 days with no activity in 5 days, or delayed once/twice
       else if (t.dueDate && t.dueDate <= in3Days && !isOverdue(t.dueDate, t.status) && daysSinceActivity >= 5) {
+        const daysUntil = Math.ceil((t.dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
         watchList.push({
           id: t.id, title: t.title, owner: t.owner,
           dueDate: t.dueDate?.toISOString() ?? null,
-          reason: `Due ${t.dueDate <= new Date() ? "today" : "in " + Math.ceil((t.dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)) + " days"} — no update in ${daysSinceActivity}d`,
+          reason: `Due ${daysUntil <= 0 ? "today" : `in ${daysUntil} day${daysUntil !== 1 ? "s" : ""}`} — no update in ${daysSinceActivity}d`,
           urgency: "medium",
+          severityTag: "REPEATED_DELAY",
+          situation: `${t.owner} has not logged any update in ${daysSinceActivity} days. Due date is approaching.`,
         });
       } else if (delays >= 1 && delays < 3) {
         watchList.push({
@@ -110,6 +152,8 @@ export async function GET() {
           dueDate: t.dueDate?.toISOString() ?? null,
           reason: `Delayed ${delays} time${delays > 1 ? "s" : ""} — watch closely`,
           urgency: "medium",
+          severityTag: "REPEATED_DELAY",
+          situation: `${t.owner} has delayed this ${delays} time${delays > 1 ? "s" : ""}. Progress signals are weak.`,
         });
       }
     }
@@ -117,14 +161,79 @@ export async function GET() {
     // Deduplicate by task id
     const seen = new Set<string>();
     const dedup = (arr: PulseTask[]) => arr.filter((t) => { if (seen.has(t.id)) return false; seen.add(t.id); return true; });
-    const needsYouNowFinal = dedup(needsYouNow).slice(0, 8);
+    const needsYouNowFinal = dedup(needsYouNow).slice(0, 3); // hard cap at 3
     seen.clear();
-    const watchListFinal = dedup(watchList.filter((t) => !needsYouNow.find((n) => n.id === t.id))).slice(0, 6);
+    const watchListFinal = dedup(watchList.filter((t) => !needsYouNow.find((n) => n.id === t.id))).slice(0, 5);
 
     const runningFineCount = allTasks.filter((t) => {
       if (t.status === "DONE" || t.status !== "OPEN") return false;
       return !needsYouNow.find((n) => n.id === t.id) && !watchList.find((w) => w.id === t.id) && !zombieTasks.find((z) => z.id === t.id);
     }).length;
+
+    // ── Headline state ─────────────────────────────────────────────────
+    const hasCritical = needsYouNowFinal.some((t) => t.urgency === "critical");
+    const headlineState: "calm" | "watchful" | "bad" | "critical" =
+      hasCritical || needsYouNowFinal.length >= 3 ? "critical"
+      : needsYouNowFinal.length >= 1 ? "bad"
+      : watchListFinal.length >= 1 ? "watchful"
+      : "calm";
+
+    // ── People reliability ─────────────────────────────────────────────
+    const ownerReliabilityMap: Record<string, {
+      function: string; activeTasks: number; delayed: number; silent: number;
+      doneTasks: number; onTimeDone: number;
+    }> = {};
+
+    for (const t of allTasks) {
+      if (!ownerReliabilityMap[t.owner]) {
+        ownerReliabilityMap[t.owner] = { function: t.function, activeTasks: 0, delayed: 0, silent: 0, doneTasks: 0, onTimeDone: 0 };
+      }
+      const o = ownerReliabilityMap[t.owner];
+      if (t.status !== "DONE") o.activeTasks++;
+      if ((delayCountMap[t.id] || 0) >= 1) o.delayed++;
+      if (isOverdue(t.dueDate, t.status) && !repliedTaskIds.has(t.id)) o.silent++;
+      if (t.status === "DONE") {
+        o.doneTasks++;
+        if (t.closedAt && t.dueDate && !isBefore(t.dueDate, t.closedAt)) o.onTimeDone++;
+      }
+    }
+
+    const peopleReliability: PersonReliability[] = Object.entries(ownerReliabilityMap)
+      .filter(([, v]) => v.activeTasks + v.doneTasks >= 2)
+      .map(([owner, v]) => {
+        const onTimeRate = v.doneTasks > 0 ? Math.round((v.onTimeDone / v.doneTasks) * 100) : 0;
+        const reliabilityLabel: PersonReliability["reliabilityLabel"] =
+          v.silent >= 2 || v.delayed >= 3 || (v.doneTasks > 0 && onTimeRate < 40) ? "AT_RISK"
+          : v.silent >= 1 || v.delayed >= 1 || (v.doneTasks > 0 && onTimeRate < 70) ? "WATCH"
+          : "STRONG";
+
+        let patternInsight: string;
+        if (v.delayed >= 3) {
+          patternInsight = `Repeated postponement — ${v.delayed} tasks delayed. Pattern is consistent.`;
+        } else if (v.silent >= 2) {
+          patternInsight = `Tasks go overdue without status updates. ${v.silent} open items with no response.`;
+        } else if (v.delayed >= 1 && v.silent >= 1) {
+          patternInsight = `Mix of delays and silence. Execution is inconsistent this cycle.`;
+        } else if (onTimeRate >= 80 && v.delayed === 0 && v.silent === 0) {
+          patternInsight = `Consistently closes tasks on time. High execution reliability.`;
+        } else if (reliabilityLabel === "STRONG") {
+          patternInsight = `Steady execution with no major flags this period.`;
+        } else {
+          patternInsight = `Some delays on open items. Worth a check-in this week.`;
+        }
+
+        const suggestedAction =
+          reliabilityLabel === "AT_RISK" ? "Review workload or escalate pending items directly."
+          : reliabilityLabel === "WATCH" ? "Ask for a status update on open items."
+          : undefined;
+
+        return { owner, function: v.function, reliabilityLabel, activeTasks: v.activeTasks, onTimeRate, delayed: v.delayed, silent: v.silent, patternInsight, suggestedAction };
+      })
+      .sort((a, b) => {
+        const rank = { AT_RISK: 0, WATCH: 1, STRONG: 2 };
+        return rank[a.reliabilityLabel] - rank[b.reliabilityLabel];
+      })
+      .slice(0, 5);
 
     // Top line AI summary
     const topLine = needsYouNowFinal.length > 0
@@ -190,6 +299,8 @@ export async function GET() {
       zombieTasks: zombieTasks.slice(0, 8),
       runningFineCount,
       topLine,
+      headlineState,
+      peopleReliability,
     });
   } catch (error) {
     console.error("Dashboard error:", error);

@@ -111,6 +111,7 @@ export async function processReminders(): Promise<ReminderJobResult> {
       owner: task.owner,
       dueDate: task.dueDate,
       id: task.id,
+      source: task.source,
     };
 
     try {
