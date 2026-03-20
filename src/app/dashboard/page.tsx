@@ -4,7 +4,7 @@ import { PulseDecisionCards } from "@/components/dashboard/PulseDecisionCards";
 import { timeAgo } from "@/lib/utils";
 import {
   AlertTriangle, Clock, TrendingUp, CheckSquare,
-  ArrowUpCircle, MessageCircle, ChevronDown, Skull, Users,
+  ArrowUpCircle, MessageCircle, ChevronDown, Skull, Users, FileText,
 } from "lucide-react";
 
 async function getDashboard(): Promise<DashboardStats> {
@@ -65,6 +65,7 @@ export default async function DashboardPage() {
   const hasPeopleFlags = data.peopleReliability?.some(
     (p) => p.reliabilityLabel === "AT_RISK" || p.reliabilityLabel === "WATCH"
   );
+  const isEmpty = data.totalOpenTasks === 0 && !hasUrgent && !hasWatchList && !hasZombies;
 
   return (
     <div className="p-4 md:p-6 max-w-screen-xl mx-auto">
@@ -111,6 +112,43 @@ export default async function DashboardPage() {
           </a>
         ))}
       </div>
+
+      {/* ── Meeting Notes CTA — always visible ─────────────────────── */}
+      <a
+        href="/meeting-notes"
+        className="flex items-center justify-between bg-indigo-600 hover:bg-indigo-700 transition-colors rounded-xl px-5 py-4 mb-6 group"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center flex-shrink-0">
+            <FileText size={16} className="text-white" />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-white leading-snug">Extract tasks from meeting notes</p>
+            <p className="text-xs text-indigo-200 mt-0.5">Paste transcript → AI creates action items instantly</p>
+          </div>
+        </div>
+        <span className="text-white/70 group-hover:text-white transition-colors text-sm font-semibold flex-shrink-0 ml-3">
+          Open →
+        </span>
+      </a>
+
+      {/* ── Empty state ─────────────────────────────────────────────── */}
+      {isEmpty && (
+        <div className="bg-white border border-green-200 rounded-xl px-6 py-10 mb-6 text-center">
+          <div className="text-5xl mb-4">🎉</div>
+          <h2 className="text-lg font-bold text-gray-900 mb-2">Clean execution — nothing needs your attention</h2>
+          <p className="text-sm text-gray-500 max-w-sm mx-auto leading-relaxed">
+            All tasks are on track. Add new commitments from your next meeting to keep the momentum going.
+          </p>
+          <a
+            href="/meeting-notes"
+            className="mt-5 inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition-colors"
+          >
+            <FileText size={14} />
+            Extract from meeting notes
+          </a>
+        </div>
+      )}
 
       {/* ── Section 2: Needs Your Decision ─────────────────────────── */}
       {hasUrgent && (

@@ -572,12 +572,12 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
                 { id: "blocked"   as const, Icon: AlertTriangle, label: "Blocked",     sub: "Stuck, need help", active: "bg-red-500 border-red-500 text-white",       idle: "hover:border-red-300 hover:bg-red-50"       },
               ]).map(({ id, Icon, label, sub, active, idle }) => (
                 <button key={id} onClick={() => selectAction(id)}
-                  className={`flex flex-col items-center gap-1.5 py-4 px-2 rounded-2xl border-2 text-center transition-all ${
+                  className={`flex flex-col items-center gap-2 py-5 px-2 min-h-[84px] rounded-2xl border-2 text-center transition-all touch-manipulation ${
                     action === id ? active : `border-gray-200 text-gray-600 ${idle}`
                   }`}
                 >
-                  <Icon size={20} />
-                  <span className="text-xs font-bold leading-tight">{label}</span>
+                  <Icon size={22} />
+                  <span className="text-sm font-bold leading-tight">{label}</span>
                   <span className={`text-xs leading-tight ${action === id ? "opacity-80" : "text-gray-400"}`}>{sub}</span>
                 </button>
               ))}
@@ -597,7 +597,7 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
                     <select
                       value={delayReason}
                       onChange={(e) => setDelayReason(e.target.value)}
-                      className="w-full border-2 border-amber-200 bg-amber-50 rounded-xl px-3 py-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                      className="w-full border-2 border-amber-200 bg-amber-50 rounded-xl px-3 py-3.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-amber-300 min-h-[48px]"
                       autoFocus
                     >
                       <option value="">Pick a reason…</option>
@@ -633,7 +633,7 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
                       action === "delayed"   ? "e.g. Client approval expected by 28 Mar"      :
                       "e.g. Need finance sign-off from Sandeep before I can proceed"
                     }
-                    className="w-full border-2 border-gray-200 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                    className="w-full border-2 border-gray-200 rounded-xl px-3 py-3.5 text-sm focus:outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 min-h-[48px]"
                     autoFocus={action !== "delayed"}
                   />
                 </div>
@@ -652,7 +652,7 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
                 <button
                   onClick={handleSubmit}
                   disabled={!canSubmit || submitting}
-                  className={`w-full text-white py-3.5 rounded-xl text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm ${
+                  className={`w-full text-white py-4 rounded-xl text-base font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm touch-manipulation ${
                     action === "delivered" ? "bg-green-600 hover:bg-green-700" :
                     action === "on_track"  ? "bg-indigo-600 hover:bg-indigo-700" :
                     action === "delayed"   ? "bg-amber-500 hover:bg-amber-600" :

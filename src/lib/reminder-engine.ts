@@ -215,6 +215,16 @@ export async function processReminders(): Promise<ReminderJobResult> {
               taskData,
               { managerName: manager.managerName }
             );
+            // Notify owner that their task has been escalated
+            await notifyOwner(
+              "escalated_owner_notice",
+              task.id,
+              task.ownerPhone,
+              task.ownerEmail,
+              task.owner,
+              taskData,
+              { daysOverdue: String(daysOverdue) }
+            );
             await prisma.task.update({
               where: { id: task.id },
               data: { escalationLevel: 1, escalationStatus: "LEVEL1", lastEscalatedAt: now },
@@ -224,11 +234,11 @@ export async function processReminders(): Promise<ReminderJobResult> {
                 taskId: task.id,
                 type: "ESCALATION",
                 actor: "system",
-                message: `Escalated to Level 1 — ${manager.managerName} notified (${daysOverdue}d overdue)`,
+                message: `Escalated to Level 1 — ${manager.managerName} notified, owner alerted (${daysOverdue}d overdue)`,
               },
             });
             result.escalations_sent++;
-            result.detail.push(`[escalated_to_manager] ${task.title} → ${manager.managerName}`);
+            result.detail.push(`[escalated_to_manager] ${task.title} → ${manager.managerName} + owner notified`);
           }
         }
       }
@@ -240,6 +250,16 @@ export async function processReminders(): Promise<ReminderJobResult> {
           const adminPhone = process.env.ADMIN_PHONE;
           if (adminPhone && !(await hasReminderBeenSentToday(task.id, "escalated_to_admin"))) {
             await sendWhatsAppMessage("escalated_to_admin", task.id, adminPhone, adminName, taskData);
+            // Notify owner that their task has been escalated to admin level
+            await notifyOwner(
+              "escalated_owner_notice",
+              task.id,
+              task.ownerPhone,
+              task.ownerEmail,
+              task.owner,
+              taskData,
+              { daysOverdue: String(daysOverdue) }
+            );
             await prisma.task.update({
               where: { id: task.id },
               data: { escalationLevel: 2, escalationStatus: "LEVEL2", lastEscalatedAt: now },
@@ -249,11 +269,11 @@ export async function processReminders(): Promise<ReminderJobResult> {
                 taskId: task.id,
                 type: "ESCALATION",
                 actor: "system",
-                message: `Escalated to Level 2 — Admin office notified (${daysOverdue}d overdue)`,
+                message: `Escalated to Level 2 — Admin office notified, owner alerted (${daysOverdue}d overdue)`,
               },
             });
             result.escalations_sent++;
-            result.detail.push(`[escalated_to_admin] ${task.title} → ${adminName}`);
+            result.detail.push(`[escalated_to_admin] ${task.title} → ${adminName} + owner notified`);
           }
         }
       }

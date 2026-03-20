@@ -70,6 +70,7 @@ export type EmailReminderType =
   | "overdue_1_day"
   | "escalated_to_manager"
   | "escalated_to_admin"
+  | "escalated_owner_notice"
   | "midpoint_check"
   | "silence_check";
 
@@ -92,8 +93,9 @@ function buildSubject(type: EmailReminderType, taskData: TaskData): string {
     case "due_in_2_days":    return `Reminder: "${taskData.title}" is due in 2 days`;
     case "due_today":        return `Due Today: "${taskData.title}"`;
     case "overdue_1_day":    return `Overdue: "${taskData.title}" was due ${due}`;
-    case "escalated_to_manager": return `Escalation: Task overdue — ${taskData.title}`;
-    case "escalated_to_admin":   return `[Admin] Task escalated: ${taskData.title}`;
+    case "escalated_to_manager":     return `Escalation: Task overdue — ${taskData.title}`;
+    case "escalated_to_admin":       return `[Admin] Task escalated: ${taskData.title}`;
+    case "escalated_owner_notice":   return `⚠️ Your task has been escalated: "${taskData.title}"`;
     case "midpoint_check":       return `Midpoint check-in: "${taskData.title}" — how's it going?`;
     case "silence_check":        return `⚠️ No update received: "${taskData.title}" is due soon`;
   }
@@ -179,6 +181,17 @@ function buildBody(
         <p>A task has been escalated to admin level (7+ days overdue):</p>
         <p style="font-weight: 600; font-size: 16px;">${taskData.title}</p>
         <p>Owner: <strong>${taskData.owner}</strong><br/>Was due: ${due}</p>`);
+
+    case "escalated_owner_notice":
+      return wrap(`
+        <p>Hi ${recipientName},</p>
+        <p>Your task has been <strong style="color: #DC2626;">escalated to your manager</strong> because it is ${extra?.daysOverdue || "3"}+ days overdue:</p>
+        <p style="font-weight: 600; font-size: 16px;">${taskData.title}</p>
+        <p style="color: #DC2626;">Was due: ${due}</p>
+        <p>Your manager has been notified. Please update the task status <strong>right now</strong> to prevent further escalation to senior leadership.</p>
+        <p style="background: #FEF3C7; border-left: 3px solid #F59E0B; padding: 8px 12px; border-radius: 0 4px 4px 0; font-size: 13px; color: #92400E;">
+          A quick update — even if delayed — shows accountability and stops the escalation chain.
+        </p>`);
 
     case "midpoint_check":
       return wrap(`

@@ -103,11 +103,26 @@ export default function OverduePage() {
             Loading overdue tasks...
           </div>
         ) : tasks.length === 0 ? (
-          <div className="py-16 text-center">
-            <p className="text-green-600 font-medium text-sm">
-              No overdue tasks matching filters
+          <div className="py-16 text-center px-6">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mb-4">
+              <span className="text-3xl">🏆</span>
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-1">
+              {minDays === 0 && !fnFilter ? "Zero overdue tasks — outstanding!" : "No overdue tasks match these filters"}
+            </h3>
+            <p className="text-sm text-gray-500 max-w-xs mx-auto leading-relaxed">
+              {minDays === 0 && !fnFilter
+                ? "Your team is delivering on time. This is what great execution looks like."
+                : "Try adjusting the filters above to see a broader view."}
             </p>
-            <p className="text-gray-400 text-xs mt-1">Great work!</p>
+            {minDays === 0 && !fnFilter && (
+              <a
+                href="/dashboard"
+                className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-600 hover:text-indigo-800 transition-colors"
+              >
+                ← Back to dashboard
+              </a>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">

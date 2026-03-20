@@ -7,6 +7,7 @@ export type ReminderType =
   | "overdue_1_day"
   | "escalated_to_manager"
   | "escalated_to_admin"
+  | "escalated_owner_notice"
   | "weekly_summary"
   | "delayed_followup"
   | "midpoint_check"
@@ -25,6 +26,8 @@ export const templates: Record<
   Exclude<ReminderType, "weekly_summary" | "MANUAL">,
   (data: TaskData, extra?: Record<string, string>) => string
 > = {
+  escalated_owner_notice: ({ title, owner, dueDate }, extra) =>
+    `Hi ${owner},\n\n🚨 *Escalation Notice*\n\nYour task has been escalated because it is ${extra?.daysOverdue || "3"}+ days overdue:\n\n*${title}*\nWas due: ${formatDate(dueDate)}\n\nYour manager has been informed. Please update the status *now* to prevent further escalation.\n\nReply *DONE*, *DELAYED* with a new date, or *NEED HELP* if blocked.`,
   task_assigned: ({ title, owner, dueDate }) =>
     `Hi ${owner} 👋\n\nYou have been assigned a new task:\n*${title}*\n\nDue: ${formatDate(dueDate)}\n\nReply with:\n• *DONE* — when complete\n• *DELAYED* — if you need more time\n• *NEED HELP* — if you need support`,
 
