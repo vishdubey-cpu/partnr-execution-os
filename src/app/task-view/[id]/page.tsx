@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   CheckCircle2, Clock, AlertTriangle, TrendingUp,
-  Calendar, User, ArrowLeft,
+  Calendar, User, ArrowLeft, Eye,
 } from "lucide-react";
 
 // ── Interfaces ──────────────────────────────────────────────────────────────
@@ -106,16 +106,17 @@ function generateNarrative(task: Task, timeline: TimelineEntry[]): string | null
   }
   if (delayCount === 1) parts.push("Delayed once so far.");
   else if (delayCount > 1) parts.push(`Delayed ${delayCount} times.`);
-  if (escalated) parts.push("Escalated to management.");
+  if (escalated) parts.push("Already escalated to management.");
   if (daysSilent !== null && daysSilent >= 3) {
-    parts.push(`No update for ${daysSilent} day${daysSilent !== 1 ? "s" : ""}.`);
+    parts.push(`No update for ${daysSilent} day${daysSilent !== 1 ? "s" : ""} — team is watching.`);
   }
   if (daysUntilDue !== null && daysUntilDue < 0) {
-    parts.push(`${Math.abs(daysUntilDue)}d past the deadline.`);
+    const d = Math.abs(daysUntilDue);
+    parts.push(`${d}d past the deadline — this is visible to your manager.`);
   } else if (daysUntilDue !== null && daysUntilDue === 0) {
-    parts.push("Due today.");
+    parts.push("Due today — an update now keeps you in control.");
   } else if (daysUntilDue !== null && daysUntilDue <= 2) {
-    parts.push(`${daysUntilDue} day${daysUntilDue !== 1 ? "s" : ""} left.`);
+    parts.push(`${daysUntilDue} day${daysUntilDue !== 1 ? "s" : ""} left — time to close this.`);
   }
   return parts.length > 0 ? parts.join(" ") : null;
 }
@@ -229,15 +230,54 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
   );
 
   // ── Derived values ────────────────────────────────────────────────────────
-  const timeline   = buildTimeline(task!.activities ?? [], task!.comments ?? []);
-  const PREVIEW    = 4;
-  const visible    = showAll ? timeline : timeline.slice(-PREVIEW);
+  const timeline    = buildTimeline(task!.activities ?? [], task!.comments ?? []);
+  const PREVIEW     = 4;
+  const visible     = showAll ? timeline : timeline.slice(-PREVIEW);
   const hiddenCount = timeline.length - PREVIEW;
-  const narrative  = generateNarrative(task!, timeline);
+  const narrative   = generateNarrative(task!, timeline);
 
   const due       = task!.dueDate ? new Date(task!.dueDate) : null;
   const dueLabel  = due ? due.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : null;
   const isOverdue = due && due < new Date() && task!.status !== "DONE";
+  const daysOverdue = isOverdue ? Math.floor((Date.now() - due!.getTime()) / 86400000) : 0;
+
+  // Days since last activity
+  const lastEntry   = timeline.length > 0 ? timeline[timeline.length - 1] : null;
+  const daysSilent  = lastEntry ? Math.floor((Date.now() - lastEntry.ts.getTime()) / 86400000) : null;
+
+  // Ownership date (when task was assigned to this person)
+  const createdActivity = task!.activities.find(a => a.type === "CREATED");
+  const committedDate   = createdActivity
+    ? new Date(createdActivity.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+    : null;
+
+  // Mini inline timeline (last 2 events)
+  const miniTimeline = timeline.slice(-2);
+
+  // Pressure signal computation
+  type PressureLevel = "overdue" | "delayed" | "silent" | null;
+  let pressureLevel: PressureLevel = null;
+  let pressureMsg = "";
+  if (task!.status !== "DONE") {
+    if (isOverdue || task!.status === "OVERDUE") {
+      pressureLevel = "overdue";
+      const mayEscalate = daysOverdue >= 2;
+      pressureMsg = `${daysOverdue}d past deadline · Visible to your manager${mayEscalate ? " · May escalate soon" : ""}`;
+    } else if (task!.status === "DELAYED") {
+      pressureLevel = "delayed";
+      const silentPart = daysSilent !== null && daysSilent >= 2 ? ` · No update for ${daysSilent} days` : "";
+      pressureMsg = `Delayed${silentPart} · Your manager can see this`;
+    } else if (daysSilent !== null && daysSilent >= 3) {
+      pressureLevel = "silent";
+      pressureMsg = `No update for ${daysSilent} days · Your team is watching`;
+    }
+  }
+
+  const pressureStyle: Record<NonNullable<PressureLevel>, { bg: string; text: string; icon: string }> = {
+    overdue: { bg: "bg-red-50 border border-red-200",    text: "text-red-700",    icon: "🚨" },
+    delayed: { bg: "bg-amber-50 border border-amber-200", text: "text-amber-800",  icon: "⚠️" },
+    silent:  { bg: "bg-orange-50 border border-orange-200", text: "text-orange-700", icon: "👀" },
+  };
 
   const statusCfg: Record<string, { bg: string; text: string; label: string; bar: string }> = {
     OPEN:    { bg: "bg-blue-100",  text: "text-blue-700",  label: "Open",    bar: "bg-blue-400"    },
@@ -250,6 +290,12 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
   const ownerName  = task!.owner && task!.owner !== "Unassigned" ? task!.owner : null;
   const firstName  = ownerName?.split(" ")[0] ?? null;
   const myTasksUrl = ownerName ? `/my-tasks/${encodeURIComponent(ownerName)}` : null;
+
+  // Action panel nudge copy
+  const isUrgent = pressureLevel === "overdue" || pressureLevel === "delayed";
+  const nudgeCopy = isUrgent
+    ? "An update now keeps you in control — prevents an escalation call."
+    : "Takes 15 seconds. Your team sees it immediately.";
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
@@ -277,6 +323,21 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
           <p className="text-sm text-gray-500 text-center pt-1">
             Hi <strong className="text-gray-800">{firstName}</strong> 👋
           </p>
+        )}
+
+        {/* ── Pressure signal strip (outside card, high visibility) ── */}
+        {pressureLevel && (
+          <div className={`rounded-xl px-4 py-3 flex items-start gap-2.5 ${pressureStyle[pressureLevel].bg}`}>
+            <span className="text-base flex-shrink-0 mt-px">{pressureStyle[pressureLevel].icon}</span>
+            <div>
+              <p className={`text-xs font-bold leading-snug ${pressureStyle[pressureLevel].text}`}>
+                {pressureMsg}
+              </p>
+              <p className={`text-xs mt-0.5 opacity-75 ${pressureStyle[pressureLevel].text}`}>
+                Update below to clear this flag from your manager&apos;s view.
+              </p>
+            </div>
+          </div>
         )}
 
         {/* ── Task card ── */}
@@ -315,10 +376,13 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
               <p className="text-sm text-gray-500 leading-relaxed mb-3">{task!.description}</p>
             )}
 
-            {/* Owner */}
+            {/* Owner + commitment date */}
             <div className="flex items-center gap-1.5 text-sm text-gray-500">
               <User size={13} className="text-gray-400" />
               <span className="font-medium text-gray-700">{task!.owner}</span>
+              {committedDate && (
+                <span className="text-xs text-gray-400">· You committed to this on {committedDate}</span>
+              )}
             </div>
 
             {/* Source context */}
@@ -328,6 +392,35 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
                 <p className="text-xs text-slate-600 italic leading-relaxed">
                   &ldquo;{task!.source}&rdquo;
                 </p>
+              </div>
+            )}
+
+            {/* ── Inline mini-timeline (last 2 events) ── */}
+            {miniTimeline.length > 0 && task!.status !== "DONE" && (
+              <div className="mt-4 pt-3 border-t border-gray-100">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Eye size={11} className="text-gray-400" />
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Last activity</p>
+                </div>
+                <div className="space-y-1.5">
+                  {miniTimeline.map((entry) => {
+                    const cfg   = getEntryConfig(entry);
+                    const actor = entry.kind === "comment" ? entry.author : (entry.actor || "System");
+                    const text  = entry.kind === "comment" ? entry.content : entry.message;
+                    return (
+                      <div key={entry.id} className="flex items-start gap-2">
+                        <div className={`w-2 h-2 rounded-full flex-shrink-0 mt-1.5 ${cfg.dot}`} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs font-semibold text-gray-600">{cfg.label}</span>
+                            <span className="text-xs text-gray-400">{actor} · {relTime(entry.ts)}</span>
+                          </div>
+                          <p className="text-xs text-gray-500 truncate">{text}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
@@ -441,7 +534,7 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
           <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center">
             <TrendingUp size={30} className="text-indigo-500 mx-auto mb-3" />
             <p className="text-base font-bold text-indigo-800">Next step logged — keep it up.</p>
-            <p className="text-xs text-indigo-600 mt-1">Your progress has been noted by the team.</p>
+            <p className="text-xs text-indigo-600 mt-1">Your progress has been noted. No follow-up needed for now.</p>
             {myTasksUrl && <a href={myTasksUrl} className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-600 hover:text-indigo-800 transition-colors"><ArrowLeft size={14} /> Back to all your tasks</a>}
           </div>
         )}
@@ -449,7 +542,7 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center">
             <Clock size={30} className="text-amber-500 mx-auto mb-3" />
             <p className="text-base font-bold text-amber-800">Delay noted — team has been informed.</p>
-            <p className="text-xs text-amber-600 mt-1">Thank you for keeping everyone in the loop.</p>
+            <p className="text-xs text-amber-600 mt-1">Good call flagging it. Transparency prevents bigger issues.</p>
             {myTasksUrl && <a href={myTasksUrl} className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-amber-700 hover:text-amber-900 transition-colors"><ArrowLeft size={14} /> Back to all your tasks</a>}
           </div>
         )}
@@ -466,7 +559,9 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
         {task!.status !== "DONE" && !submitted && (
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
             <p className="text-base font-extrabold text-gray-900 mb-0.5">Where do things stand?</p>
-            <p className="text-xs text-gray-400 mb-5">15 seconds — your team sees it immediately.</p>
+            <p className={`text-xs mb-4 ${isUrgent ? "text-red-500 font-semibold" : "text-gray-400"}`}>
+              {nudgeCopy}
+            </p>
 
             {/* 2×2 grid */}
             <div className="grid grid-cols-2 gap-2.5 mb-4">
@@ -521,6 +616,9 @@ export default function TaskViewPage({ params }: { params: { id: string } }) {
                   </label>
                   {action === "on_track" && (
                     <p className="text-xs text-gray-400 mb-1.5">Be specific — e.g. &ldquo;Will share first draft with team by Thursday&rdquo;</p>
+                  )}
+                  {action === "on_track" && (
+                    <p className="text-xs text-indigo-500 font-medium mb-1.5">A quick note here prevents a follow-up call from your manager.</p>
                   )}
                   {action === "blocked" && (
                     <p className="text-xs text-gray-400 mb-1.5">Name the person or thing blocking you so the right help can reach you.</p>

@@ -211,14 +211,33 @@ export default function TaskDetailPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-screen-lg mx-auto">
-      {/* Back */}
-      <Link
-        href="/tasks"
-        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4"
-      >
-        <ArrowLeft size={14} />
-        Back to Tasks
-      </Link>
+      {/* Back nav */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-4">
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+          >
+            <ArrowLeft size={14} />
+            Dashboard
+          </Link>
+          <span className="text-gray-300">·</span>
+          <Link
+            href="/tasks"
+            className="text-sm text-gray-500 hover:text-gray-700"
+          >
+            All Tasks
+          </Link>
+        </div>
+        {task.owner && task.owner !== "Unassigned" && (
+          <Link
+            href={`/my-tasks/${encodeURIComponent(task.owner)}`}
+            className="text-xs font-semibold text-indigo-500 hover:text-indigo-700 transition-colors"
+          >
+            View {task.owner}&apos;s tasks →
+          </Link>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Main content */}

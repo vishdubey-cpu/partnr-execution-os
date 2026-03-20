@@ -118,6 +118,38 @@ export default async function MyTasksPage({ params }: { params: { owner: string 
   const score = reliabilityConfig[scoreKey];
   const firstName = ownerName.split(" ")[0];
 
+  // ── Personal progress nudge ──────────────────────────────────────────────
+  const delayed = tasks.filter((t) => t.status === "DELAYED" && !t.isOverdue);
+  const totalUrgent = overdue.length + delayed.length;
+  let nudge: { msg: string; sub: string; style: string } | null = null;
+  if (tasks.length === 0) {
+    nudge = null;
+  } else if (overdue.length > 0 && delayed.length === 0) {
+    nudge = {
+      msg: `You have ${overdue.length} overdue task${overdue.length !== 1 ? "s" : ""} — act now to avoid escalation.`,
+      sub: "Your manager can see overdue tasks. An update takes 15 seconds.",
+      style: "bg-red-50 border-red-200 text-red-800",
+    };
+  } else if (overdue.length > 0 && delayed.length > 0) {
+    nudge = {
+      msg: `${totalUrgent} tasks need attention — ${overdue.length} overdue, ${delayed.length} delayed.`,
+      sub: "Close or update these to keep your execution score strong.",
+      style: "bg-red-50 border-red-200 text-red-800",
+    };
+  } else if (delayed.length > 0) {
+    nudge = {
+      msg: `${delayed.length} delayed task${delayed.length !== 1 ? "s" : ""}. Update to stop further escalation.`,
+      sub: "A quick note prevents a follow-up call from your manager.",
+      style: "bg-amber-50 border-amber-200 text-amber-800",
+    };
+  } else if (tasks.length > 0) {
+    nudge = {
+      msg: `You're on track — ${tasks.length} task${tasks.length !== 1 ? "s" : ""} in progress, none delayed.`,
+      sub: "Keep updating as you go to maintain your strong execution score.",
+      style: "bg-green-50 border-green-200 text-green-800",
+    };
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
 
@@ -140,6 +172,14 @@ export default async function MyTasksPage({ params }: { params: { owner: string 
       </div>
 
       <div className="px-4 pt-5 pb-10 max-w-lg mx-auto space-y-5">
+
+        {/* ── Personal progress nudge ── */}
+        {nudge && (
+          <div className={`rounded-2xl border px-4 py-3.5 ${nudge.style}`}>
+            <p className="text-sm font-bold leading-snug">{nudge.msg}</p>
+            <p className="text-xs mt-1 opacity-75">{nudge.sub}</p>
+          </div>
+        )}
 
         {/* ── Score / motivation card — ALWAYS shown ── */}
         <div className={`rounded-2xl border ${score.border} ${score.bg} overflow-hidden`}>
@@ -250,9 +290,17 @@ function TaskCard({ task }: { task: OwnerTask }) {
 
   const dueLabel = task.dueDate
     ? task.isOverdue && task.daysOverdue !== null
-      ? `${task.daysOverdue}d overdue`
+      ? `${task.daysOverdue}d past deadline`
       : `Due ${new Date(task.dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`
     : "No due date";
+
+  // Urgency sub-label — replaces plain "Delayed" / "Overdue" with context
+  let urgencyLabel = sl.text;
+  if (task.isOverdue && task.daysOverdue !== null) {
+    urgencyLabel = task.daysOverdue >= 3 ? "Overdue · Manager notified" : "Overdue · Act now";
+  } else if (task.status === "DELAYED") {
+    urgencyLabel = "Delayed · May escalate";
+  }
 
   const btnStyle = task.isOverdue
     ? "bg-red-600 hover:bg-red-700 text-white"
@@ -283,7 +331,7 @@ function TaskCard({ task }: { task: OwnerTask }) {
 
               <div className="flex flex-wrap items-center gap-1.5 mt-2 pl-4">
                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${sl.bg} ${sl.color}`}>
-                  {sl.text}
+                  {urgencyLabel}
                 </span>
                 <span className={`text-xs font-medium ${task.isOverdue ? "text-red-500" : "text-gray-400"}`}>
                   {dueLabel}
@@ -299,7 +347,7 @@ function TaskCard({ task }: { task: OwnerTask }) {
               href={`/task-view/${task.id}`}
               className={`flex-shrink-0 text-xs font-bold px-3 py-2 rounded-xl transition-colors shadow-sm ${btnStyle}`}
             >
-              View & Update →
+              {task.isOverdue ? "Update Now →" : task.status === "DELAYED" ? "Update →" : "View & Update →"}
             </a>
           </div>
         </div>

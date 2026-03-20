@@ -97,18 +97,18 @@ export default async function DashboardPage() {
       {/* ── Stats Row ──────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         {[
-          { label: "Open Tasks",   value: data.totalOpenTasks,          color: "text-blue-600",  bg: "bg-blue-50",  icon: <CheckSquare size={18} /> },
-          { label: "Overdue",      value: data.overdueTasks,            color: "text-red-600",   bg: "bg-red-50",   icon: <AlertTriangle size={18} /> },
-          { label: "Due Today",    value: data.dueTodayTasks,           color: "text-amber-600", bg: "bg-amber-50", icon: <Clock size={18} /> },
-          { label: "On-Time Rate", value: `${data.onTimeClosureRate}%`, color: "text-green-600", bg: "bg-green-50", icon: <TrendingUp size={18} /> },
+          { label: "Open Tasks",   value: data.totalOpenTasks,          color: "text-blue-600",  bg: "bg-blue-50",  icon: <CheckSquare size={18} />, href: "/tasks" },
+          { label: "Overdue",      value: data.overdueTasks,            color: "text-red-600",   bg: "bg-red-50",   icon: <AlertTriangle size={18} />, href: "/overdue" },
+          { label: "Due Today",    value: data.dueTodayTasks,           color: "text-amber-600", bg: "bg-amber-50", icon: <Clock size={18} />, href: "/tasks" },
+          { label: "On-Time Rate", value: `${data.onTimeClosureRate}%`, color: "text-green-600", bg: "bg-green-50", icon: <TrendingUp size={18} />, href: "/weekly-review" },
         ].map((s) => (
-          <div key={s.label} className={`${s.bg} rounded-xl p-4 flex items-center gap-3`}>
+          <a key={s.label} href={s.href} className={`${s.bg} rounded-xl p-4 flex items-center gap-3 hover:brightness-95 transition-all cursor-pointer`}>
             <span className={s.color}>{s.icon}</span>
             <div>
               <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
               <p className="text-xs text-gray-500">{s.label}</p>
             </div>
-          </div>
+          </a>
         ))}
       </div>
 
@@ -180,7 +180,11 @@ export default async function DashboardPage() {
             {data.peopleReliability.map((person) => {
               const cfg = reliabilityConfig[person.reliabilityLabel];
               return (
-                <div key={person.owner} className={`${cfg.bg} border ${cfg.border} rounded-xl p-4`}>
+                <a
+                  key={person.owner}
+                  href={`/my-tasks/${encodeURIComponent(person.owner)}`}
+                  className={`${cfg.bg} border ${cfg.border} rounded-xl p-4 block hover:brightness-95 transition-all cursor-pointer`}
+                >
                   <div className="flex items-start justify-between mb-2">
                     <div>
                       <p className="text-sm font-semibold text-gray-900">{person.owner}</p>
@@ -202,7 +206,8 @@ export default async function DashboardPage() {
                       <span className="font-semibold not-italic">Action:</span> {person.suggestedAction}
                     </p>
                   )}
-                </div>
+                  <p className="text-xs text-indigo-500 font-semibold mt-2">View {person.owner}&apos;s tasks →</p>
+                </a>
               );
             })}
           </div>
