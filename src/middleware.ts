@@ -5,6 +5,7 @@ import type { NextRequest } from "next/server";
 const PUBLIC_PREFIXES = [
   "/login",
   "/task-view",
+  "/my-tasks",    // owner task list — accessed via email link, no login required
   "/api/",        // all API routes — pages are protected, server components need cookie-free access
   "/_next",
   "/favicon.ico",

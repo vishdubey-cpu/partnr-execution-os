@@ -71,7 +71,8 @@ async function notifyOwner(
   ownerPhone: string,
   ownerEmail: string | null | undefined,
   ownerName: string,
-  taskData: Parameters<typeof sendWhatsAppMessage>[4],
+  // source is included so it flows through to email templates (context-from-meeting block)
+  taskData: Parameters<typeof sendWhatsAppMessage>[4] & { source?: string | null },
   extra?: Record<string, string>
 ): Promise<number> {
   let sent = 0;

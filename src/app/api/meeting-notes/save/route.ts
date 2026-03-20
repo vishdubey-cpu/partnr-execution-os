@@ -49,7 +49,11 @@ export async function POST(req: NextRequest) {
           function: t.function || "",
           priority: t.priority || "MEDIUM",
           dueDate: validDue ?? undefined,
-          source: `${meetingName}${meetingDate ? ` (${new Date(meetingDate).toDateString()})` : ""}`,
+          // Use the exact sentence from the meeting notes as source context.
+          // Falls back to meeting name if no per-task sourceText was extracted.
+          source: t.sourceText
+            ? `${t.sourceText} — ${meetingName}`
+            : `${meetingName}${meetingDate ? ` (${new Date(meetingDate).toDateString()})` : ""}`,
           status,
           activities: {
             create: [
