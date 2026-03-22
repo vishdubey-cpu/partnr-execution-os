@@ -5,6 +5,7 @@
  */
 
 import nodemailer from "nodemailer";
+import { prisma } from "@/lib/prisma";
 
 export interface CalendarInviteData {
   taskId: string;
@@ -119,7 +120,7 @@ export function generateICS(data: CalendarInviteData): string {
   return lines.join("\r\n");
 }
 
-export async function sendCalendarInvite(data: CalendarInviteData): Promise<void> {
+export async function sendCalendarInvite(data: CalendarInviteData): Promise<{ success: boolean; provider: string; error?: string }> {
   const icsContent = generateICS(data);
   const emailProvider = process.env.EMAIL_PROVIDER?.toUpperCase();
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
@@ -176,42 +177,98 @@ export async function sendCalendarInvite(data: CalendarInviteData): Promise<void
       <p style="font-size:11px;color:#aaa;margin-top:24px;border-top:1px solid #F3F4F6;padding-top:16px;">Partnr Execution OS · Task Calendar Invite</p>
     </div>`;
 
-  if (emailProvider === "GMAIL" && process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
-    });
-    await transporter.sendMail({
-      from: `Partnr Reminders <${process.env.GMAIL_USER}>`,
-      to: data.ownerEmail,
-      subject,
-      html,
-      attachments: [{
-        filename: "invite.ics",
-        content: icsContent,
-        contentType: "text/calendar;method=REQUEST",
-      }],
-    });
-  } else if (emailProvider === "RESEND" && process.env.RESEND_API_KEY) {
-    await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-      },
-      body: JSON.stringify({
-        from: process.env.EMAIL_FROM || "Partnr OS <noreply@partnr.app>",
+  const provider =
+    emailProvider === "GMAIL" && process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD
+      ? "GMAIL"
+      : emailProvider === "RESEND" && process.env.RESEND_API_KEY
+      ? "RESEND"
+      : "MOCK";
+
+  try {
+    if (provider === "GMAIL") {
+      const transporter = nodemailer.createTransport({
+        service: "gmail",
+        auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
+      });
+      await transporter.sendMail({
+        from: `Partnr Reminders <${process.env.GMAIL_USER}>`,
         to: data.ownerEmail,
         subject,
         html,
         attachments: [{
           filename: "invite.ics",
-          content: Buffer.from(icsContent).toString("base64"),
+          content: icsContent,
+          contentType: "text/calendar;method=REQUEST",
         }],
-      }),
+      });
+      console.log(`[Calendar GMAIL] Sent to ${data.ownerEmail} | Task: ${data.taskTitle}`);
+
+    } else if (provider === "RESEND") {
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+        },
+        body: JSON.stringify({
+          from: process.env.EMAIL_FROM || "Partnr OS <noreply@partnr.app>",
+          to: data.ownerEmail,
+          subject,
+          html,
+          attachments: [{
+            filename: "invite.ics",
+            content: Buffer.from(icsContent).toString("base64"),
+            content_type: "text/calendar; method=REQUEST",   // required by Resend for .ics
+          }],
+        }),
+      });
+      const resBody = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(`Resend API ${res.status}: ${JSON.stringify(resBody)}`);
+      }
+      console.log(`[Calendar RESEND] Accepted | id=${resBody.id} | to=${data.ownerEmail} | task=${data.taskTitle}`);
+
+    } else {
+      console.log(`[Calendar MOCK] Would send invite to: ${data.ownerEmail} | Task: ${data.taskTitle} | Due: ${data.dueDate}${data.startTime ? ` at ${data.startTime}` : ""}`);
+    }
+
+    // Log success to Reminder table so it's visible in the task UI
+    await prisma.reminder.create({
+      data: {
+        taskId: data.taskId,
+        type: "CALENDAR_INVITE",
+        channel: "EMAIL",
+        recipientName: data.ownerName,
+        recipientPhone: "",
+        recipientEmail: data.ownerEmail,
+        provider,
+        status: "SENT",
+        message: subject,
+      },
     });
-  } else {
-    console.log(`[Calendar MOCK] Would send invite to: ${data.ownerEmail} | Task: ${data.taskTitle} | Due: ${data.dueDate}`);
-    console.log("[Calendar MOCK] ICS content:\n", icsContent);
+
+    return { success: true, provider };
+
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error("[Calendar] Invite send FAILED:", errMsg);
+
+    // Log failure to Reminder table so it's visible in the task UI
+    await prisma.reminder.create({
+      data: {
+        taskId: data.taskId,
+        type: "CALENDAR_INVITE",
+        channel: "EMAIL",
+        recipientName: data.ownerName,
+        recipientPhone: "",
+        recipientEmail: data.ownerEmail,
+        provider,
+        status: "FAILED",
+        message: subject,
+        metadata: errMsg,
+      },
+    }).catch(() => {}); // Don't throw if DB write fails
+
+    return { success: false, provider, error: errMsg };
   }
 }

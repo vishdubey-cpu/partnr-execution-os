@@ -85,18 +85,22 @@ export async function POST(req: NextRequest) {
         const extraAttendees = t.calendarAttendees
           ? t.calendarAttendees.split(",").map((e: string) => e.trim()).filter(Boolean)
           : [];
-        sendCalendarInvite({
+        const calResult = await sendCalendarInvite({
           taskId: task.id,
           taskTitle: task.title,
           taskDescription: task.description || "",
           ownerName: task.owner,
           ownerEmail: t.ownerEmail,
           dueDate: validDue.toISOString().split("T")[0],
-          startTime: t.calendarTime || undefined,  // HH:MM — creates timed 1-hour event
+          startTime: t.calendarTime || undefined,
           meetingName: meetingName || "Meeting",
           sourceText: t.sourceText,
           extraAttendees,
-        }).catch((e) => console.error("[calendar] invite failed:", e));
+        }).catch((e) => {
+          console.error("[calendar] invite failed:", e);
+          return { success: false, provider: "UNKNOWN", error: String(e) };
+        });
+        console.log(`[calendar] invite for task ${task.id}: success=${calResult.success} provider=${calResult.provider}${calResult.error ? " error=" + calResult.error : ""}`);
       }
     }
 
