@@ -184,6 +184,14 @@ export async function sendCalendarInvite(data: CalendarInviteData): Promise<{ su
       ? "RESEND"
       : "MOCK";
 
+  // All recipients: owner first, then extra attendees (deduped)
+  const extraEmails = (data.extraAttendees || []).filter(
+    (e) => e && e !== data.ownerEmail
+  );
+  // For Resend/Gmail `to` field — send to owner; CC extra attendees so each
+  // person gets their own copy of the ICS and can accept/decline individually
+  const ccEmails = extraEmails;
+
   try {
     if (provider === "GMAIL") {
       const transporter = nodemailer.createTransport({
@@ -193,6 +201,7 @@ export async function sendCalendarInvite(data: CalendarInviteData): Promise<{ su
       await transporter.sendMail({
         from: `Partnr Reminders <${process.env.GMAIL_USER}>`,
         to: data.ownerEmail,
+        cc: ccEmails.length ? ccEmails.join(", ") : undefined,
         subject,
         html,
         attachments: [{
@@ -201,7 +210,7 @@ export async function sendCalendarInvite(data: CalendarInviteData): Promise<{ su
           contentType: "text/calendar;method=REQUEST",
         }],
       });
-      console.log(`[Calendar GMAIL] Sent to ${data.ownerEmail} | Task: ${data.taskTitle}`);
+      console.log(`[Calendar GMAIL] Sent to ${data.ownerEmail}${ccEmails.length ? ` CC: ${ccEmails.join(", ")}` : ""} | Task: ${data.taskTitle}`);
 
     } else if (provider === "RESEND") {
       const res = await fetch("https://api.resend.com/emails", {
@@ -213,12 +222,13 @@ export async function sendCalendarInvite(data: CalendarInviteData): Promise<{ su
         body: JSON.stringify({
           from: process.env.EMAIL_FROM || "Partnr OS <noreply@partnr.app>",
           to: data.ownerEmail,
+          ...(ccEmails.length ? { cc: ccEmails } : {}),
           subject,
           html,
           attachments: [{
             filename: "invite.ics",
             content: Buffer.from(icsContent).toString("base64"),
-            content_type: "text/calendar; method=REQUEST",   // required by Resend for .ics
+            content_type: "text/calendar; method=REQUEST",
           }],
         }),
       });
@@ -226,10 +236,10 @@ export async function sendCalendarInvite(data: CalendarInviteData): Promise<{ su
       if (!res.ok) {
         throw new Error(`Resend API ${res.status}: ${JSON.stringify(resBody)}`);
       }
-      console.log(`[Calendar RESEND] Accepted | id=${resBody.id} | to=${data.ownerEmail} | task=${data.taskTitle}`);
+      console.log(`[Calendar RESEND] Accepted | id=${resBody.id} | to=${data.ownerEmail}${ccEmails.length ? ` cc=${ccEmails.join(",")}` : ""} | task=${data.taskTitle}`);
 
     } else {
-      console.log(`[Calendar MOCK] Would send invite to: ${data.ownerEmail} | Task: ${data.taskTitle} | Due: ${data.dueDate}${data.startTime ? ` at ${data.startTime}` : ""}`);
+      console.log(`[Calendar MOCK] Would send invite to: ${data.ownerEmail}${ccEmails.length ? ` CC: ${ccEmails.join(", ")}` : ""} | Task: ${data.taskTitle} | Due: ${data.dueDate}${data.startTime ? ` at ${data.startTime}` : ""}`);
     }
 
     // Log success to Reminder table so it's visible in the task UI
