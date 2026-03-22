@@ -11,7 +11,7 @@ import {
 
 interface ExtractState {
   meetingNoteId: string;
-  tasks: (ExtractedTask & { selected: boolean; sendCalendarInvite: boolean; calendarAttendees: string; _key: number; _expanded: boolean })[];
+  tasks: (ExtractedTask & { selected: boolean; sendCalendarInvite: boolean; calendarAttendees: string; calendarTime: string; _key: number; _expanded: boolean })[];
   provider: string;
 }
 
@@ -57,6 +57,7 @@ export default function MeetingNotesPage() {
           selected: true,
           sendCalendarInvite: false,
           calendarAttendees: t.ownerEmail || "",
+          calendarTime: "10:00",
           _key: i,
           _expanded: false,
         })),
@@ -362,9 +363,23 @@ export default function MeetingNotesPage() {
                                 {/* Pre-populated summary */}
                                 <div className="bg-white rounded-lg border border-indigo-200 p-3 space-y-1.5 text-xs text-gray-600">
                                   <div className="flex gap-2"><span className="font-semibold text-gray-500 w-20 flex-shrink-0">Title:</span><span>[Partnr] {task.title}</span></div>
-                                  <div className="flex gap-2"><span className="font-semibold text-gray-500 w-20 flex-shrink-0">Due date:</span><span className="text-red-600 font-medium">{task.dueDate || "—"}</span></div>
+                                  <div className="flex gap-2"><span className="font-semibold text-gray-500 w-20 flex-shrink-0">Date:</span><span className="text-red-600 font-medium">{task.dueDate || "—"}</span></div>
                                   <div className="flex gap-2"><span className="font-semibold text-gray-500 w-20 flex-shrink-0">To:</span><span>{task.ownerName} &lt;{task.ownerEmail || "no email set"}&gt;</span></div>
                                   <div className="flex gap-2"><span className="font-semibold text-gray-500 w-20 flex-shrink-0">Context:</span><span className="italic text-slate-500">{task.description || "—"}</span></div>
+                                </div>
+
+                                {/* Meeting time */}
+                                <div>
+                                  <label className="block text-xs font-medium text-indigo-700 mb-1">
+                                    Meeting time <span className="font-normal text-indigo-400">(1-hour slot in recipient's local time)</span>
+                                  </label>
+                                  <input
+                                    type="time"
+                                    value={task.calendarTime || "10:00"}
+                                    onChange={(e) => updateTask(task._key, "calendarTime", e.target.value)}
+                                    className="border border-indigo-200 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                                  />
+                                  <span className="ml-2 text-xs text-gray-400">— event will block 1 hour from this time</span>
                                 </div>
 
                                 {/* Extra attendees */}

@@ -13,6 +13,7 @@ export interface CalendarInviteData {
   ownerName: string;
   ownerEmail: string;
   dueDate: string;           // YYYY-MM-DD
+  startTime?: string;        // HH:MM (24h) — if set, creates a 1-hour timed event; else all-day
   meetingName: string;
   sourceText?: string;       // exact quote from meeting notes
   extraAttendees?: string[]; // additional attendee emails
@@ -35,11 +36,30 @@ function escapeICS(text: string): string {
 }
 
 export function generateICS(data: CalendarInviteData): string {
-  const dtStart = toICSDate(data.dueDate);
-  // End date = due date + 1 day (all-day event convention)
-  const dueObj = new Date(data.dueDate + "T00:00:00");
-  dueObj.setDate(dueObj.getDate() + 1);
-  const dtEnd = dueObj.toISOString().split("T")[0].replace(/-/g, "");
+  let dtStartLine: string;
+  let dtEndLine: string;
+
+  if (data.startTime) {
+    // Timed event: use floating local time (no Z), 1-hour duration
+    const [hh, mm] = data.startTime.split(":").map(Number);
+    const startObj = new Date(`${data.dueDate}T00:00:00`);
+    startObj.setHours(hh, mm, 0, 0);
+    const endObj = new Date(startObj.getTime() + 60 * 60 * 1000); // +1 hour
+
+    const fmt = (d: Date) =>
+      `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}T${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}00`;
+
+    dtStartLine = `DTSTART:${fmt(startObj)}`;
+    dtEndLine   = `DTEND:${fmt(endObj)}`;
+  } else {
+    // All-day event (original behaviour, kept as fallback)
+    const dtStart = toICSDate(data.dueDate);
+    const dueObj = new Date(data.dueDate + "T00:00:00");
+    dueObj.setDate(dueObj.getDate() + 1);
+    const dtEnd = dueObj.toISOString().split("T")[0].replace(/-/g, "");
+    dtStartLine = `DTSTART;VALUE=DATE:${dtStart}`;
+    dtEndLine   = `DTEND;VALUE=DATE:${dtEnd}`;
+  }
 
   const now = new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
   const uid = `task-${data.taskId}-${Date.now()}@partnr.app`;
@@ -78,8 +98,8 @@ export function generateICS(data: CalendarInviteData): string {
     "BEGIN:VEVENT",
     `UID:${uid}`,
     `DTSTAMP:${now}`,
-    `DTSTART;VALUE=DATE:${dtStart}`,
-    `DTEND;VALUE=DATE:${dtEnd}`,
+    dtStartLine,
+    dtEndLine,
     `SUMMARY:${escapeICS(`[Partnr] ${data.taskTitle}`)}`,
     `DESCRIPTION:${escapeICS(description)}`,
     `ORGANIZER;CN=${escapeICS(organizerName)}:mailto:${organizerEmail}`,
@@ -108,8 +128,16 @@ export async function sendCalendarInvite(data: CalendarInviteData): Promise<void
   const dueDateFormatted = new Date(data.dueDate + "T00:00:00").toLocaleDateString("en-IN", {
     weekday: "long", day: "numeric", month: "long", year: "numeric",
   });
+  const timeFormatted = data.startTime
+    ? (() => {
+        const [h, m] = data.startTime.split(":").map(Number);
+        const suffix = h >= 12 ? "PM" : "AM";
+        const h12 = h % 12 || 12;
+        return ` at ${h12}:${String(m).padStart(2, "0")} ${suffix}`;
+      })()
+    : "";
 
-  const subject = `📅 Calendar invite: "${data.taskTitle}" — due ${dueDateFormatted}`;
+  const subject = `📅 Calendar invite: "${data.taskTitle}" — ${dueDateFormatted}${timeFormatted}`;
 
   const contextBlock = data.sourceText
     ? `<div style="background:#F8FAFC;border-left:3px solid #CBD5E1;padding:10px 14px;margin:12px 0;border-radius:0 6px 6px 0;">
@@ -130,7 +158,7 @@ export async function sendCalendarInvite(data: CalendarInviteData): Promise<void
 
       <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:16px 20px;margin:16px 0;">
         <p style="margin:0 0 6px;font-size:16px;font-weight:700;color:#111;">${data.taskTitle}</p>
-        <p style="margin:0;font-size:13px;color:#6B7280;">📅 Due: <strong style="color:#DC2626;">${dueDateFormatted}</strong></p>
+        <p style="margin:0;font-size:13px;color:#6B7280;">📅 ${data.startTime ? "When" : "Due"}: <strong style="color:#DC2626;">${dueDateFormatted}${timeFormatted}</strong></p>
         ${data.taskDescription ? `<p style="margin:8px 0 0;font-size:13px;color:#555;">${data.taskDescription}</p>` : ""}
       </div>
 

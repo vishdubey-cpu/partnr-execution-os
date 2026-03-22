@@ -92,6 +92,7 @@ export async function POST(req: NextRequest) {
           ownerName: task.owner,
           ownerEmail: t.ownerEmail,
           dueDate: validDue.toISOString().split("T")[0],
+          startTime: t.calendarTime || undefined,  // HH:MM — creates timed 1-hour event
           meetingName: meetingName || "Meeting",
           sourceText: t.sourceText,
           extraAttendees,
