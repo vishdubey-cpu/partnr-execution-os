@@ -43,7 +43,7 @@ export async function sendEmail(opts: {
       html: opts.html,
     });
   } else if (provider === "RESEND") {
-    await fetch("https://api.resend.com/emails", {
+    const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -58,6 +58,11 @@ export async function sendEmail(opts: {
         options: { click_tracking: false, open_tracking: false },
       }),
     });
+    const resBody = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(`Resend API ${res.status}: ${JSON.stringify(resBody)}`);
+    }
+    console.log(`[Email RESEND] Accepted | id=${resBody.id} | to=${opts.to} | subject="${opts.subject}"`);
   } else {
     console.log(`[Email MOCK] To: ${opts.to}${cc.length ? ` | CC: ${cc.join(", ")}` : ""} | Subject: ${opts.subject}`);
   }
@@ -561,10 +566,12 @@ export async function sendEmailReminder(
           options: { click_tracking: false, open_tracking: false },
         }),
       });
+      const resBody = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const err = await res.text();
-        throw new Error(`Resend error ${res.status}: ${err}`);
+        throw new Error(`Resend API ${res.status}: ${JSON.stringify(resBody)}`);
       }
+      // Log Resend's email ID so it can be looked up in the Resend dashboard
+      console.log(`[Email RESEND] Accepted | id=${resBody.id} | to=${recipientEmail} | subject="${subject}"`);
     } else {
       // Mock: log to console
       console.log(
