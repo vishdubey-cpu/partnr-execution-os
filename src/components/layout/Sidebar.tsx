@@ -15,13 +15,12 @@ import {
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { label: "Home", href: "/", icon: Zap },
+  { label: "Home", href: "/meeting-notes", icon: NotebookText },
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "All Tasks", href: "/tasks", icon: CheckSquare },
   { label: "New Task", href: "/tasks/new", icon: PlusCircle },
   { label: "Overdue", href: "/overdue", icon: AlertTriangle },
   { label: "Weekly Review", href: "/weekly-review", icon: BarChart2 },
-  { label: "Meeting Notes", href: "/meeting-notes", icon: NotebookText },
 ];
 
 export function Sidebar({ onClose }: { onClose?: () => void }) {
@@ -53,10 +52,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
       <nav className="flex-1 px-3 py-4 space-y-0.5">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive =
-            item.href === "/"
-              ? pathname === "/"
-              : pathname.startsWith(item.href);
+          const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
           return (
             <Link
               key={item.href}

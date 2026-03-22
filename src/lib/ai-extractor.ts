@@ -265,7 +265,7 @@ async function claudeExtractTasks(
 ): Promise<ExtractedTask[]> {
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-  const prompt = `You are an expert chief of staff who extracts ONLY concrete, actionable tasks from meeting notes.
+  const prompt = `You are a meeting note processor. Your job is to extract EVERY action item and assignment from meeting notes — no filtering, no judgment about whether it's important enough. If someone was told to do something, extract it.
 
 Meeting: ${meetingName}
 Date: ${meetingDate.toDateString()} (use year ${meetingDate.getFullYear()} for all relative dates like "Monday", "next week", etc.)
@@ -273,53 +273,44 @@ Date: ${meetingDate.toDateString()} (use year ${meetingDate.getFullYear()} for a
 Meeting Notes:
 ${notes}
 
-YOUR JOB: Extract only real, specific, assignable tasks. Apply strict judgment.
+━━━ CORE RULE ━━━
+Extract EVERY sentence where a specific person is assigned or told to do something. Do not filter by topic, importance, or whether it seems like a "work task". If the notes say "Amit to go to bed at 9 PM", extract it — the user will decide whether to keep it.
 
-━━━ WHAT IS A REAL TASK ━━━
-✅ A specific deliverable someone must produce: "Prepare first draft of leadership presentation"
-✅ A concrete action with a clear output: "Share pricing deck with Pallavi by Monday"
-✅ Something you could put in a tracker and mark done
-
-━━━ WHAT IS NOT A TASK — SKIP THESE ━━━
-❌ Vague managerial instructions: "Spend considerable time thinking about X"
-❌ General expectations: "Be aligned with leadership principles"
-❌ Observations or context: "This is the most important thing we need to do"
-❌ Repetitions of the same task in different words
-❌ Statements of urgency without a concrete deliverable: "We have very little time"
-❌ Instructions to attend or participate: "Meet each other"
+━━━ WHAT TO SKIP (only these) ━━━
+❌ Pure observations with NO action: "The market share is 3%" — no one is told to do anything
+❌ Context/background sentences: "Our 133 dark stores serve 750 mechanics each"
+❌ Exact duplicates of the same assignment already extracted
+❌ Statements of fact or opinion with no assignee: "Kiran is my mom"
 
 ━━━ TASK TITLE RULES ━━━
-- Write clean, professional task titles (3–8 words)
-- Start with an action verb: Prepare / Review / Send / Finalize / Complete / Submit / Share
-- NEVER copy raw text verbatim as a title
+- Write clean, readable task titles (3–8 words)
+- Start with an action verb: Complete / Send / Prepare / Review / Finalize / Go / Call / Submit
+- NEVER copy raw text verbatim as the title
 - NO dates in the title
-- BAD: "Rehearse tune standardise build stories in leadership principles presentations"
-- GOOD: "Standardise leadership principles presentation stories"
+- If the raw text is "Amit to go to bed at 9 PM today", title = "Go to bed by 9 PM"
 
 ━━━ OWNER RULES ━━━
-- The notes are often a MANAGER speaking TO their team. "I want to see X" means the TEAM owns X, not the manager.
-- If a person's name is mentioned in context of doing something, they are the owner.
+- If a person is named as the doer, they are the owner. "Amit to go to bed" → owner = Amit
+- The notes are often a MANAGER speaking TO their team. "I want to see X" means the TEAM owns X.
 - If no specific person is named, leave ownerName empty (don't guess).
-- "Pallavi Vidhur" mentioned as reviewer/approver → they are the owner of the review task.
 
 ━━━ DATE RULES ━━━
-- "Monday" = next Monday from meeting date, resolve to ISO date
-- "Tuesday" = next Tuesday from meeting date, resolve to ISO date
-- "end of month" = last day of the meeting's month
-- Always resolve relative dates to YYYY-MM-DD using the meeting date as reference
+- Resolve ALL relative dates to YYYY-MM-DD using the meeting date as reference
+- "today" → meeting date; "tomorrow" → meeting date + 1; "by 5th" → 5th of current month; "next week" → meeting date + 7
+- "end of month" → last day of the meeting's month
 
-Return ONLY a valid JSON array (no markdown, no explanation). Each element must have exactly these fields:
+Return ONLY a valid JSON array (no markdown, no explanation). Each element:
 {
   "title": string,           // clean action title, NO dates
-  "description": string,     // 1-sentence context explaining WHY this task matters
-  "ownerName": string,       // full name if mentioned, empty string if unclear
+  "description": string,     // 1-sentence explaining what this is about
+  "ownerName": string,       // person responsible, empty string if unclear
   "ownerPhone": "",
   "ownerEmail": "",
   "dueDate": string,         // ISO YYYY-MM-DD or empty string
   "priority": "LOW"|"MEDIUM"|"HIGH"|"CRITICAL",
   "function": "HR"|"Sales"|"Operations"|"Finance"|"Technology"|"Strategy"|"Marketing"|"",
   "source": "${meetingName}",
-  "sourceText": string,      // the specific sentence/phrase this came from
+  "sourceText": string,      // exact sentence this came from
   "confidenceScore": number, // 0.0–1.0
   "needsReview": boolean     // true if owner OR dueDate is missing
 }`;
@@ -370,7 +361,7 @@ async function openAIExtractTasks(
   meetingName: string,
   meetingDate: Date
 ): Promise<ExtractedTask[]> {
-  const prompt = `You are an expert chief of staff extracting ONLY concrete, assignable tasks from meeting notes.
+  const prompt = `You are a meeting note processor. Extract EVERY action item where a specific person is told to do something. Do not filter by topic or importance — if someone is assigned to do something, extract it. The user will decide what to keep.
 
 Meeting: ${meetingName}
 Date: ${meetingDate.toDateString()} (year: ${meetingDate.getFullYear()})
@@ -378,27 +369,27 @@ Date: ${meetingDate.toDateString()} (year: ${meetingDate.getFullYear()})
 Notes:
 ${notes}
 
-STRICT RULES:
-1. Extract ONLY real tasks — specific deliverables someone must produce or actions with a clear output.
-2. SKIP: vague instructions ("spend time thinking"), general expectations, observations, urgency statements, repetitions.
-3. Task titles must be clean (3–8 words, start with action verb like Prepare/Send/Review/Finalize). NEVER copy raw text verbatim.
-4. The speaker is usually a MANAGER talking TO their team — "I want to see X" means the team owns X.
-5. Resolve relative dates (Monday, next week) to ISO YYYY-MM-DD using the meeting date as reference.
-6. If no specific person is named as owner, leave ownerName empty — do not guess.
+RULES:
+1. Extract EVERY assignment — even personal ones like "Amit to go to bed at 9 PM today". Do not judge or filter.
+2. SKIP ONLY: pure observations with no assignee ("market share is 3%"), background context with no action ("our stores serve 750 mechanics"), statements of fact ("Kiran is my mom"), exact duplicate assignments.
+3. Task titles: 3-8 words, start with action verb (Complete/Send/Go/Prepare/Review/Submit). NEVER copy raw text verbatim. NO dates in title.
+4. Owner: the person named as doing the action. "Amit to go to bed" → owner = Amit. If speaker says "I want X done", the team owns it (leave owner empty unless a specific person is named).
+5. Resolve ALL relative dates to YYYY-MM-DD: "today" = meeting date, "tomorrow" = +1 day, "by 5th" = 5th of same month, "next week" = +7 days, "end of month" = last day of month.
+6. If no specific person is named as owner, leave ownerName as empty string.
 
-Return a JSON array of tasks. Each task must have:
+Return a JSON array. Each item must have exactly:
 - title (string, 3-8 words, action verb first, NO dates)
-- description (string, 1-sentence context explaining why this matters)
-- ownerName (string, person responsible — empty string if unclear)
-- ownerPhone (string, always empty string)
-- ownerEmail (string, always empty string)
-- dueDate (string, ISO YYYY-MM-DD resolved from meeting date — empty if not mentioned)
+- description (string, 1-sentence explanation of the assignment)
+- ownerName (string, person responsible, empty string if unclear)
+- ownerPhone (string, always "")
+- ownerEmail (string, always "")
+- dueDate (string, ISO YYYY-MM-DD or "")
 - priority (string: LOW | MEDIUM | HIGH | CRITICAL)
-- function (string: HR | Sales | Operations | Finance | Technology | Strategy | Marketing | empty)
+- function (string: HR | Sales | Operations | Finance | Technology | Strategy | Marketing | "")
 - source (string, "${meetingName}")
-- sourceText (string, exact sentence this task came from)
+- sourceText (string, exact sentence this came from)
 - confidenceScore (number 0.0-1.0)
-- needsReview (boolean, true if owner or dueDate is missing)
+- needsReview (boolean, true if owner or dueDate missing)
 
 Return ONLY a valid JSON array, no markdown, no explanation.`;
 
@@ -436,25 +427,25 @@ export async function extractTasksFromNotes(
   meetingName: string,
   meetingDate: Date
 ): Promise<{ tasks: ExtractedTask[]; provider: string }> {
-  // 1. Try Claude (best quality)
-  if (process.env.ANTHROPIC_API_KEY && process.env.AI_PROVIDER !== "MOCK") {
-    try {
-      console.log("[AI Extractor] Trying Claude API...");
-      const tasks = await claudeExtractTasks(notes, meetingName, meetingDate);
-      return { tasks, provider: "claude" };
-    } catch (err) {
-      console.warn("[AI Extractor] Claude failed, trying OpenAI:", err instanceof Error ? err.message : err);
-    }
-  }
-
-  // 2. Try OpenAI
+  // 1. Try OpenAI GPT-4o first (primary extractor)
   if (process.env.OPENAI_API_KEY && process.env.AI_PROVIDER !== "MOCK") {
     try {
       console.log("[AI Extractor] Trying OpenAI API (gpt-4o)...");
       const tasks = await openAIExtractTasks(notes, meetingName, meetingDate);
       return { tasks, provider: "openai" };
     } catch (err) {
-      console.warn("[AI Extractor] OpenAI failed, falling back to mock:", err instanceof Error ? err.message : err);
+      console.warn("[AI Extractor] OpenAI failed, trying Claude:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  // 2. Fall back to Claude
+  if (process.env.ANTHROPIC_API_KEY && process.env.AI_PROVIDER !== "MOCK") {
+    try {
+      console.log("[AI Extractor] Trying Claude API...");
+      const tasks = await claudeExtractTasks(notes, meetingName, meetingDate);
+      return { tasks, provider: "claude" };
+    } catch (err) {
+      console.warn("[AI Extractor] Claude failed, falling back to mock:", err instanceof Error ? err.message : err);
     }
   }
 
