@@ -34,3 +34,4 @@ Thumbs.db
 # Prisma generated (regenerated at build)
 # keep schema but not client cache
 tsconfig.tsbuildinfo
+.digest-sent

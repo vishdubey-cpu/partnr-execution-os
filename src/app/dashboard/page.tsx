@@ -6,6 +6,7 @@ import {
   AlertTriangle, Clock, TrendingUp, CheckSquare,
   ArrowUpCircle, MessageCircle, ChevronDown, Skull, Users, FileText,
 } from "lucide-react";
+import { DigestButton } from "@/components/dashboard/DigestButton";
 
 async function getDashboard(): Promise<DashboardStats> {
   const res = await fetch(
@@ -343,6 +344,9 @@ export default async function DashboardPage() {
           <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
             <MessageCircle size={14} className="text-indigo-500" />
             <h2 className="text-sm font-semibold text-gray-800">Recent Reminders Sent</h2>
+            <div className="ml-auto">
+              <DigestButton />
+            </div>
           </div>
           <div className="p-4 space-y-2 max-h-64 overflow-y-auto">
             {data.recentReminders.length === 0 ? (
