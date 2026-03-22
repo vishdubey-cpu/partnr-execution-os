@@ -324,11 +324,31 @@ Return ONLY a valid JSON array (no markdown, no explanation). Each element must 
   "needsReview": boolean     // true if owner OR dueDate is missing
 }`;
 
-  const message = await client.messages.create({
-    model: "claude-3-5-sonnet-20241022",
-    max_tokens: 4096,
-    messages: [{ role: "user", content: prompt }],
-  });
+  // Try models in priority order — newer/better first, fall back if unavailable
+  const modelsToTry = [
+    process.env.CLAUDE_MODEL || "claude-sonnet-4-5",
+    "claude-3-5-sonnet-20241022",
+    "claude-3-haiku-20240307",
+  ];
+
+  let message;
+  let lastErr: unknown;
+  for (const model of modelsToTry) {
+    try {
+      console.log(`[AI Extractor] Trying Claude model: ${model}`);
+      message = await client.messages.create({
+        model,
+        max_tokens: 4096,
+        messages: [{ role: "user", content: prompt }],
+      });
+      console.log(`[AI Extractor] Claude model succeeded: ${model}`);
+      break;
+    } catch (err) {
+      console.warn(`[AI Extractor] Claude model ${model} failed:`, err instanceof Error ? err.message : err);
+      lastErr = err;
+    }
+  }
+  if (!message) throw lastErr || new Error("All Claude models failed");
 
   const block = message.content[0];
   if (block.type !== "text") throw new Error("Unexpected Claude response type");
@@ -389,10 +409,12 @@ Return ONLY a valid JSON array, no markdown, no explanation.`;
       Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.2,
-      response_format: { type: "json_object" },
+      model: process.env.OPENAI_MODEL || "gpt-4o",
+      messages: [
+        { role: "system", content: "You are an expert chief of staff. Return only valid JSON arrays." },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.1,
     }),
   });
 
@@ -413,24 +435,30 @@ export async function extractTasksFromNotes(
   notes: string,
   meetingName: string,
   meetingDate: Date
-): Promise<ExtractedTask[]> {
-  // 1. Try Claude (best quality) — throw on failure so the user sees the real error
+): Promise<{ tasks: ExtractedTask[]; provider: string }> {
+  // 1. Try Claude (best quality)
   if (process.env.ANTHROPIC_API_KEY && process.env.AI_PROVIDER !== "MOCK") {
-    console.log("[AI Extractor] Using Claude API (claude-3-haiku-20240307)");
-    return await claudeExtractTasks(notes, meetingName, meetingDate);
+    try {
+      console.log("[AI Extractor] Trying Claude API...");
+      const tasks = await claudeExtractTasks(notes, meetingName, meetingDate);
+      return { tasks, provider: "claude" };
+    } catch (err) {
+      console.warn("[AI Extractor] Claude failed, trying OpenAI:", err instanceof Error ? err.message : err);
+    }
   }
 
   // 2. Try OpenAI
   if (process.env.OPENAI_API_KEY && process.env.AI_PROVIDER !== "MOCK") {
-    console.log("[AI Extractor] Using OpenAI API");
     try {
-      return await openAIExtractTasks(notes, meetingName, meetingDate);
+      console.log("[AI Extractor] Trying OpenAI API (gpt-4o)...");
+      const tasks = await openAIExtractTasks(notes, meetingName, meetingDate);
+      return { tasks, provider: "openai" };
     } catch (err) {
-      console.warn("[AI Extractor] OpenAI failed, falling back to mock:", err);
+      console.warn("[AI Extractor] OpenAI failed, falling back to mock:", err instanceof Error ? err.message : err);
     }
   }
 
   // 3. Regex mock fallback
-  console.log("[AI Extractor] Using regex mock (no API key set)");
-  return mockExtractTasks(notes, meetingName, meetingDate);
+  console.log("[AI Extractor] Using regex mock (no API key configured)");
+  return { tasks: mockExtractTasks(notes, meetingName, meetingDate), provider: "mock" };
 }

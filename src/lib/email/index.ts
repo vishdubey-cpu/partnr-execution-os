@@ -229,6 +229,7 @@ interface DigestData {
 export async function sendDailyDigest(adminEmail: string, adminName: string, data: DigestData): Promise<void> {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
   const dashboardUrl = `${baseUrl}/dashboard`;
+  const overdueUrl = `${baseUrl}/overdue`;
 
   const needsDecision = data.needsDecision ?? [];
   const drifting = data.drifting ?? [];
@@ -236,120 +237,214 @@ export async function sendDailyDigest(adminEmail: string, adminName: string, dat
   const recentlyDone = data.recentlyDone ?? [];
   const pulse = data.executionPulse;
 
-  // Dynamic subject
+  const today = new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+
+  // Determine overall status for header colour
+  const isRed    = needsDecision.length > 0 || data.overdueCount >= 3;
+  const isAmber  = !isRed && (drifting.length > 0 || data.overdueCount > 0);
+  const headerBg = isRed ? "#FEF2F2" : isAmber ? "#FFFBEB" : "#F0FDF4";
+  const headerBorder = isRed ? "#FECACA" : isAmber ? "#FDE68A" : "#BBF7D0";
+  const statusDot = isRed ? "#DC2626" : isAmber ? "#F59E0B" : "#16A34A";
+  const statusLabel = isRed ? "Attention Required" : isAmber ? "Watch Closely" : "Clean Execution";
+  const statusColor = isRed ? "#DC2626" : isAmber ? "#B45309" : "#166534";
+
   const subject = needsDecision.length > 0
-    ? `⚠️ ${needsDecision.length} decision${needsDecision.length > 1 ? "s" : ""} need you today — Partnr Morning Brief`
+    ? `🔴 ${needsDecision.length} decision${needsDecision.length > 1 ? "s" : ""} need you today — Partnr Morning Brief`
     : drifting.length > 0
-    ? `👀 ${drifting.length} task${drifting.length > 1 ? "s" : ""} drifting this week — Partnr Morning Brief`
+    ? `🟡 ${drifting.length} task${drifting.length > 1 ? "s" : ""} drifting — Partnr Morning Brief`
     : `✅ Clean execution today — Partnr Morning Brief`;
 
-  const decisionRows = needsDecision.map((t) => `
-    <tr>
-      <td style="padding:10px 12px;border-bottom:1px solid #FECACA;">
-        <a href="${baseUrl}/tasks/${t.id}" style="color:#111;font-size:13px;font-weight:600;text-decoration:none;">${t.title}</a>
-        <p style="margin:2px 0 0;font-size:11px;color:#DC2626;">${t.reason}</p>
-      </td>
-      <td style="padding:10px 12px;border-bottom:1px solid #FECACA;font-size:12px;color:#555;white-space:nowrap;">${t.owner}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #FECACA;white-space:nowrap;">
-        <a href="${baseUrl}/tasks/${t.id}" style="font-size:11px;font-weight:700;color:#4F46E5;text-decoration:none;">Decide →</a>
-      </td>
-    </tr>`).join("");
+  // Scorecard pills
+  const scorecardItems = pulse ? [
+    { label: "Active", value: pulse.active, color: "#4F46E5", bg: "#EEF2FF" },
+    { label: "Due This Week", value: pulse.dueThisWeek, color: "#B45309", bg: "#FFFBEB" },
+    { label: "On Time", value: pulse.completedOnTime, color: "#16A34A", bg: "#F0FDF4" },
+    { label: "Delayed", value: pulse.delayed, color: "#D97706", bg: "#FEF3C7" },
+    { label: "No Response", value: pulse.noResponse, color: "#DC2626", bg: "#FEF2F2" },
+  ] : [];
 
-  const driftingRows = drifting.map((t) => `
-    <tr>
-      <td style="padding:8px 12px;border-bottom:1px solid #FDE68A;">
-        <a href="${baseUrl}/tasks/${t.id}" style="color:#111;font-size:13px;font-weight:500;text-decoration:none;">${t.title}</a>
-      </td>
-      <td style="padding:8px 12px;border-bottom:1px solid #FDE68A;font-size:12px;color:#555;white-space:nowrap;">${t.owner}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #FDE68A;font-size:12px;color:#B45309;white-space:nowrap;font-weight:600;">
-        Due in ${t.daysUntil <= 0 ? "today" : `${t.daysUntil}d`}
-      </td>
-    </tr>`).join("");
+  const scorecardHtml = scorecardItems.length > 0 ? `
+    <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;border-spacing:6px;margin-bottom:20px;">
+      <tr>
+        ${scorecardItems.map(s => `
+          <td style="background:${s.bg};border-radius:10px;padding:12px 8px;text-align:center;width:20%;">
+            <div style="font-size:22px;font-weight:800;color:${s.color};line-height:1;">${s.value}</div>
+            <div style="font-size:10px;color:#6B7280;margin-top:3px;font-weight:500;">${s.label}</div>
+          </td>`).join("")}
+      </tr>
+    </table>` : "";
 
-  const peopleRows = peopleInsight.map((p) => {
-    const flags = [];
-    if (p.overdue > 0) flags.push(`${p.overdue} overdue`);
-    if (p.delays > 1) flags.push(`${p.delays}x delayed`);
-    if (p.noResponse > 0) flags.push(`${p.noResponse} silent`);
-    return `<tr>
-      <td style="padding:6px 12px;border-bottom:1px solid #EDE9FE;font-size:13px;font-weight:500;">${p.owner}</td>
-      <td style="padding:6px 12px;border-bottom:1px solid #EDE9FE;font-size:12px;color:#7C3AED;">${flags.join(" · ")}</td>
-    </tr>`;
+  // Decision cards — each with its own action button
+  const decisionCards = needsDecision.map(t => `
+    <div style="background:#FFF5F5;border:1px solid #FECACA;border-left:4px solid #DC2626;border-radius:8px;padding:14px 16px;margin-bottom:10px;">
+      <table cellpadding="0" cellspacing="0" style="width:100%;">
+        <tr>
+          <td style="vertical-align:top;">
+            <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#111;">${t.title}</p>
+            <p style="margin:0;font-size:12px;color:#DC2626;font-weight:600;">${t.reason}</p>
+            <p style="margin:4px 0 0;font-size:12px;color:#6B7280;">Owner: ${t.owner}</p>
+          </td>
+          <td style="vertical-align:middle;text-align:right;white-space:nowrap;padding-left:12px;">
+            <a href="${baseUrl}/tasks/${t.id}" style="background:#DC2626;color:white;padding:8px 16px;border-radius:6px;text-decoration:none;font-size:12px;font-weight:700;display:inline-block;">
+              Take Action →
+            </a>
+          </td>
+        </tr>
+      </table>
+    </div>`).join("");
+
+  // Drifting rows — each with its own view button
+  const driftingCards = drifting.map(t => `
+    <div style="background:#FFFBEB;border:1px solid #FDE68A;border-left:4px solid #F59E0B;border-radius:8px;padding:12px 16px;margin-bottom:8px;">
+      <table cellpadding="0" cellspacing="0" style="width:100%;">
+        <tr>
+          <td>
+            <p style="margin:0 0 2px;font-size:13px;font-weight:600;color:#111;">${t.title}</p>
+            <p style="margin:0;font-size:12px;color:#92400E;">${t.owner} · Due ${t.daysUntil <= 0 ? "today" : `in ${t.daysUntil}d`}</p>
+          </td>
+          <td style="text-align:right;white-space:nowrap;padding-left:12px;">
+            <a href="${baseUrl}/tasks/${t.id}" style="color:#B45309;font-size:12px;font-weight:700;text-decoration:none;border:1px solid #FDE68A;border-radius:5px;padding:5px 12px;background:white;display:inline-block;">
+              View →
+            </a>
+          </td>
+        </tr>
+      </table>
+    </div>`).join("");
+
+  // People insight — each with link to their tasks
+  const peopleCards = peopleInsight.map(p => {
+    const flags: string[] = [];
+    if (p.overdue > 0) flags.push(`<span style="color:#DC2626;font-weight:700;">${p.overdue} overdue</span>`);
+    if (p.delays > 1) flags.push(`<span style="color:#D97706;">${p.delays}× delayed</span>`);
+    if (p.noResponse > 0) flags.push(`<span style="color:#7C3AED;">${p.noResponse} silent</span>`);
+    const myTasksUrl = `${baseUrl}/my-tasks/${encodeURIComponent(p.owner)}`;
+    return `
+    <div style="background:#FAF5FF;border:1px solid #DDD6FE;border-radius:8px;padding:12px 16px;margin-bottom:8px;">
+      <table cellpadding="0" cellspacing="0" style="width:100%;">
+        <tr>
+          <td>
+            <p style="margin:0 0 3px;font-size:13px;font-weight:700;color:#111;">${p.owner}</p>
+            <p style="margin:0;font-size:12px;">${flags.join(" &nbsp;·&nbsp; ")}</p>
+          </td>
+          <td style="text-align:right;white-space:nowrap;padding-left:12px;">
+            <a href="${myTasksUrl}" style="color:#7C3AED;font-size:12px;font-weight:600;text-decoration:none;border:1px solid #DDD6FE;border-radius:5px;padding:5px 12px;background:white;display:inline-block;">
+              View tasks →
+            </a>
+          </td>
+        </tr>
+      </table>
+    </div>`;
   }).join("");
 
-  const doneList = recentlyDone.map((t) =>
-    `<span style="display:inline-block;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:4px;padding:3px 8px;font-size:11px;color:#166534;margin:2px;">${t.title} <span style="color:#9CA3AF;">(${t.owner})</span></span>`
-  ).join(" ");
+  // Done this week — compact chips
+  const doneChips = recentlyDone.map(t =>
+    `<span style="display:inline-block;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:20px;padding:4px 12px;font-size:12px;color:#166534;margin:3px;font-weight:500;">✓ ${t.title} <span style="color:#9CA3AF;font-weight:400;">${t.owner}</span></span>`
+  ).join("");
 
   const html = `
-    <div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;padding:32px 24px;color:#111;">
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#F3F4F6;">
+<div style="max-width:620px;margin:0 auto;padding:20px 0;">
 
-      <!-- Header -->
-      <h2 style="font-size:22px;font-weight:700;margin:0 0 4px;">Good morning, ${adminName}.</h2>
-      <p style="font-size:13px;color:#888;margin:0 0 8px;">
-        ${needsDecision.length > 0
-          ? `<strong style="color:#DC2626;">${needsDecision.length} item${needsDecision.length > 1 ? "s" : ""}</strong> need your decision today.`
-          : drifting.length > 0
-          ? `No blockers. <strong style="color:#B45309;">${drifting.length} item${drifting.length > 1 ? "s" : ""}</strong> to watch this week.`
-          : `Clean execution. Team is on track.`}
-        ${pulse ? ` ${pulse.active} active tasks across your team.` : ""}
-      </p>
+  <!-- Outer card -->
+  <div style="background:white;border-radius:16px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08);">
 
-      ${pulse ? `
-      <!-- Execution Pulse -->
-      <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:12px 16px;margin-bottom:24px;display:flex;gap:20px;flex-wrap:wrap;">
-        <span style="font-size:12px;color:#555;">📋 <strong>${pulse.active}</strong> active</span>
-        <span style="font-size:12px;color:#555;">⏰ <strong>${pulse.dueThisWeek}</strong> due this week</span>
-        <span style="font-size:12px;color:#16A34A;">✅ <strong>${pulse.completedOnTime}</strong> completed on time</span>
-        <span style="font-size:12px;color:#B45309;">🕐 <strong>${pulse.delayed}</strong> delayed</span>
-        <span style="font-size:12px;color:#DC2626;">🔕 <strong>${pulse.noResponse}</strong> no response</span>
+    <!-- ── Status header ── -->
+    <div style="background:${headerBg};border-bottom:1px solid ${headerBorder};padding:24px 28px;">
+      <table cellpadding="0" cellspacing="0" style="width:100%;">
+        <tr>
+          <td style="vertical-align:top;">
+            <div style="display:inline-flex;align-items:center;gap:8px;margin-bottom:8px;">
+              <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${statusDot};"></span>
+              <span style="font-size:12px;font-weight:700;color:${statusColor};text-transform:uppercase;letter-spacing:0.5px;">${statusLabel}</span>
+            </div>
+            <h1 style="margin:0 0 4px;font-size:20px;font-weight:800;color:#111;">Good morning, ${adminName}.</h1>
+            <p style="margin:0;font-size:13px;color:#6B7280;">${today}</p>
+          </td>
+          <td style="vertical-align:top;text-align:right;">
+            <a href="${dashboardUrl}" style="display:inline-block;background:#4F46E5;color:white;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:700;">
+              Open Dashboard →
+            </a>
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- ── Main content ── -->
+    <div style="padding:24px 28px;">
+
+      <!-- Scorecard -->
+      ${scorecardHtml}
+
+      ${needsDecision.length === 0 && drifting.length === 0 && data.overdueCount === 0 ? `
+      <!-- All-clear -->
+      <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:12px;padding:20px;text-align:center;margin-bottom:20px;">
+        <div style="font-size:32px;margin-bottom:8px;">🎉</div>
+        <p style="margin:0 0 4px;font-size:15px;font-weight:700;color:#166534;">Team is delivering on time</p>
+        <p style="margin:0;font-size:13px;color:#4ADE80;">No blockers, no overdue tasks. Great execution week.</p>
       </div>` : ""}
 
-      <!-- Section 1: Needs Your Decision -->
+      <!-- Section: Needs Your Decision -->
       ${needsDecision.length > 0 ? `
       <div style="margin-bottom:24px;">
-        <p style="font-size:12px;font-weight:700;color:#DC2626;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 8px;">🔴 Needs Your Decision</p>
-        <table style="width:100%;border-collapse:collapse;border:1px solid #FECACA;border-radius:8px;overflow:hidden;">
-          <tbody>${decisionRows}</tbody>
-        </table>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#DC2626;"></span>
+          <span style="font-size:12px;font-weight:800;color:#DC2626;text-transform:uppercase;letter-spacing:0.5px;">Needs Your Decision</span>
+          <span style="background:#FEE2E2;color:#DC2626;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;">${needsDecision.length}</span>
+        </div>
+        ${decisionCards}
+        <a href="${overdueUrl}" style="display:block;text-align:center;color:#DC2626;font-size:12px;font-weight:600;text-decoration:none;margin-top:8px;">View all overdue tasks →</a>
       </div>` : ""}
 
-      <!-- Section 2: Drifting This Week -->
+      <!-- Section: Drifting -->
       ${drifting.length > 0 ? `
       <div style="margin-bottom:24px;">
-        <p style="font-size:12px;font-weight:700;color:#B45309;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 8px;">🟡 Drifting This Week</p>
-        <table style="width:100%;border-collapse:collapse;border:1px solid #FDE68A;border-radius:8px;overflow:hidden;">
-          <tbody>${driftingRows}</tbody>
-        </table>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#F59E0B;"></span>
+          <span style="font-size:12px;font-weight:800;color:#B45309;text-transform:uppercase;letter-spacing:0.5px;">Drifting This Week</span>
+          <span style="background:#FEF3C7;color:#B45309;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;">${drifting.length}</span>
+        </div>
+        <p style="font-size:12px;color:#9CA3AF;margin:0 0 10px;">Not broken yet — but moving in the wrong direction.</p>
+        ${driftingCards}
       </div>` : ""}
 
-      <!-- Section 3: People Insight -->
+      <!-- Section: People Requiring Attention -->
       ${peopleInsight.length > 0 ? `
       <div style="margin-bottom:24px;">
-        <p style="font-size:12px;font-weight:700;color:#5B21B6;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 8px;">👤 People Insight</p>
-        <table style="width:100%;border-collapse:collapse;border:1px solid #EDE9FE;border-radius:8px;overflow:hidden;background:#FAF5FF;">
-          <tbody>${peopleRows}</tbody>
-        </table>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#7C3AED;"></span>
+          <span style="font-size:12px;font-weight:800;color:#5B21B6;text-transform:uppercase;letter-spacing:0.5px;">People Requiring Attention</span>
+        </div>
+        <p style="font-size:12px;color:#9CA3AF;margin:0 0 10px;">Execution patterns matter more than isolated misses.</p>
+        ${peopleCards}
       </div>` : ""}
 
-      <!-- Section 4: Done This Week -->
+      <!-- Section: Completed This Week -->
       ${recentlyDone.length > 0 ? `
-      <div style="margin-bottom:24px;">
-        <p style="font-size:12px;font-weight:700;color:#166534;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 8px;">✅ Completed This Week</p>
-        <div>${doneList}</div>
+      <div style="margin-bottom:20px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#16A34A;"></span>
+          <span style="font-size:12px;font-weight:800;color:#166534;text-transform:uppercase;letter-spacing:0.5px;">Completed This Week</span>
+        </div>
+        <div>${doneChips}</div>
       </div>` : ""}
 
-      <!-- CTA -->
-      <p style="margin-top:24px;">
-        <a href="${dashboardUrl}" style="background:#4F46E5;color:white;padding:11px 22px;border-radius:7px;text-decoration:none;font-size:14px;font-weight:600;">
-          Open Dashboard →
-        </a>
-      </p>
+    </div>
 
-      <p style="font-size:11px;color:#aaa;margin-top:32px;border-top:1px solid #F3F4F6;padding-top:16px;">
-        Partnr Execution OS · Daily Brief
-      </p>
-    </div>`;
+    <!-- ── Footer ── -->
+    <div style="background:#F9FAFB;border-top:1px solid #F3F4F6;padding:16px 28px;text-align:center;">
+      <a href="${dashboardUrl}" style="display:inline-block;background:#4F46E5;color:white;padding:11px 28px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:700;margin-bottom:12px;">
+        Open Full Dashboard →
+      </a>
+      <p style="margin:0;font-size:11px;color:#9CA3AF;">Partnr Execution OS · Daily Brief · ${today}</p>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>`;
 
   await sendEmail({ to: adminEmail, subject, html });
 }

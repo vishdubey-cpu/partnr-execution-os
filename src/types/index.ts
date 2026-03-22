@@ -165,4 +165,6 @@ export interface ExtractedTask {
   confidenceScore: number;
   needsReview: boolean;
   selected?: boolean;
+  sendCalendarInvite?: boolean;
+  calendarAttendees?: string; // comma-separated extra attendee emails
 }

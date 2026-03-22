@@ -33,16 +33,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid meetingDate" }, { status: 400 });
     }
 
-    const provider =
-      process.env.ANTHROPIC_API_KEY && process.env.AI_PROVIDER !== "MOCK"
-        ? "claude"
-        : process.env.OPENAI_API_KEY && process.env.AI_PROVIDER !== "MOCK"
-        ? "openai"
-        : "mock";
-
-    console.log(`[meeting-notes/extract] Provider: ${provider}, AI_PROVIDER env: ${process.env.AI_PROVIDER}`);
-
-    const tasks = await extractTasksFromNotes(rawNotes, meetingName, parsedDate);
+    const { tasks, provider } = await extractTasksFromNotes(rawNotes, meetingName, parsedDate);
 
     // Persist the meeting note record (without saving tasks yet)
     let meetingNoteId = "";
@@ -57,7 +48,7 @@ export async function POST(req: NextRequest) {
       });
       meetingNoteId = meetingNote.id;
     } catch (dbErr) {
-      console.warn("[meeting-notes/extract] Could not save meeting note record (DB may not be available):", dbErr);
+      console.warn("[meeting-notes/extract] Could not save meeting note record:", dbErr);
     }
 
     console.log(`[meeting-notes/extract] Extracted ${tasks.length} tasks via ${provider} from "${meetingName}"`);

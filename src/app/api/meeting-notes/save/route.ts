@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isBefore } from "date-fns";
 import { sendEmailReminder } from "@/lib/email";
+import { sendCalendarInvite } from "@/lib/calendar";
 
 /**
  * POST /api/meeting-notes/save
@@ -77,6 +78,24 @@ export async function POST(req: NextRequest) {
           task.owner,
           { id: task.id, title: task.title, owner: task.owner, dueDate: task.dueDate ?? new Date(), source: task.source }
         ).catch((e) => console.error("[email] task_assigned failed:", e));
+      }
+
+      // Send calendar invite if requested and owner has email + due date
+      if (t.sendCalendarInvite && t.ownerEmail && validDue) {
+        const extraAttendees = t.calendarAttendees
+          ? t.calendarAttendees.split(",").map((e: string) => e.trim()).filter(Boolean)
+          : [];
+        sendCalendarInvite({
+          taskId: task.id,
+          taskTitle: task.title,
+          taskDescription: task.description || "",
+          ownerName: task.owner,
+          ownerEmail: t.ownerEmail,
+          dueDate: validDue.toISOString().split("T")[0],
+          meetingName: meetingName || "Meeting",
+          sourceText: t.sourceText,
+          extraAttendees,
+        }).catch((e) => console.error("[calendar] invite failed:", e));
       }
     }
 
