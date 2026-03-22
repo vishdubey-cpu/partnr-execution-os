@@ -91,3 +91,10 @@ model MeetingNote {
   extractedJson String?
   createdAt     DateTime @default(now())
 }
+
+// Tracks daily digest sends — persists across server restarts for dedup
+model DigestLog {
+  id     String   @id @default(cuid())
+  date   String   @unique // YYYY-MM-DD (IST date)
+  sentAt DateTime @default(now())
+}

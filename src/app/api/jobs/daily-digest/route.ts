@@ -6,7 +6,7 @@ import { isBefore, isToday } from "date-fns";
 const isOverdue = (dueDate: Date | null, status: string) =>
   status === "OVERDUE" || (status !== "DONE" && !!dueDate && isBefore(dueDate, new Date()));
 
-export async function GET() {
+export async function GET(req: Request) {
   const adminEmail = process.env.ADMIN_EMAIL;
   const adminName = process.env.ADMIN_NAME || "Admin";
 
@@ -14,8 +14,27 @@ export async function GET() {
     return NextResponse.json({ error: "ADMIN_EMAIL env var not set" }, { status: 400 });
   }
 
+  // Allow force override via ?force=1 for manual testing
+  const { searchParams } = new URL(req.url);
+  const force = searchParams.get("force") === "1";
+
   try {
     const now = new Date();
+
+    // ── Database-level dedup ─────────────────────────────────────────────
+    // Use IST date (UTC+5:30) so "today" aligns with the 8 AM IST send time
+    const istOffset = 5.5 * 60 * 60 * 1000;
+    const istNow = new Date(now.getTime() + istOffset);
+    const todayIST = istNow.toISOString().split("T")[0]; // YYYY-MM-DD in IST
+
+    if (!force) {
+      const alreadySent = await prisma.digestLog.findUnique({ where: { date: todayIST } });
+      if (alreadySent) {
+        console.log(`[daily-digest] Already sent for ${todayIST}, skipping.`);
+        return NextResponse.json({ skipped: true, reason: `Already sent for ${todayIST}` });
+      }
+    }
+    // ────────────────────────────────────────────────────────────────────
     const allTasks = await prisma.task.findMany({ orderBy: { createdAt: "desc" } });
 
     // Activity tracking
@@ -107,6 +126,17 @@ export async function GET() {
       t.status === "DONE" && t.closedAt && t.closedAt >= sevenDaysAgo &&
       t.dueDate && !isBefore(t.dueDate, t.closedAt)
     ).length;
+
+    // Record send in DB before calling (optimistic lock — prevents race condition on concurrent calls)
+    if (!force) {
+      try {
+        await prisma.digestLog.create({ data: { date: todayIST } });
+      } catch {
+        // Unique constraint violation = another concurrent call already created it
+        console.log(`[daily-digest] Concurrent send detected for ${todayIST}, skipping.`);
+        return NextResponse.json({ skipped: true, reason: "Concurrent send detected" });
+      }
+    }
 
     await sendDailyDigest(adminEmail, adminName, {
       overdueCount: overdueTasks.length,
