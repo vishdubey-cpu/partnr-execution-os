@@ -29,27 +29,20 @@ export default function MeetingNotesPage() {
   const [meetingDate, setMeetingDate] = useState(new Date().toISOString().split("T")[0]);
   const [rawNotes, setRawNotes] = useState("");
 
-  useEffect(() => {
-    const pending = sessionStorage.getItem("pendingNotes");
-    if (pending) { setRawNotes(pending); sessionStorage.removeItem("pendingNotes"); }
-  }, []);
-
   const [extracting, setExtracting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [extracted, setExtracted] = useState<ExtractState | null>(null);
   const [savedCount, setSavedCount] = useState<number | null>(null);
 
-  async function handleExtract(e: React.FormEvent) {
-    e.preventDefault();
+  async function runExtraction(notes: string, name: string, date: string) {
     setError(""); setSavedCount(null);
-    if (!rawNotes.trim()) { setError("Please paste your meeting notes."); return; }
     setExtracting(true);
     try {
       const res = await fetch("/api/meeting-notes/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ meetingName, meetingDate, rawNotes }),
+        body: JSON.stringify({ meetingName: name, meetingDate: date, rawNotes: notes }),
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Extraction failed"); }
       const data = await res.json();
@@ -73,6 +66,23 @@ export default function MeetingNotesPage() {
     } finally {
       setExtracting(false);
     }
+  }
+
+  // Auto-extract when redirected from home page with pendingNotes
+  useEffect(() => {
+    const pending = sessionStorage.getItem("pendingNotes");
+    if (pending) {
+      sessionStorage.removeItem("pendingNotes");
+      setRawNotes(pending);
+      runExtraction(pending, meetingName, meetingDate);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleExtract(e: React.FormEvent) {
+    e.preventDefault();
+    if (!rawNotes.trim()) { setError("Please paste your meeting notes."); return; }
+    await runExtraction(rawNotes, meetingName, meetingDate);
   }
 
   function updateTask(key: number, field: string, value: string | boolean) {

@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, ArrowRight, ArrowLeft, Save, CheckCircle2, AlertCircle } from "lucide-react";
-import { ExtractedTask } from "@/types";
+import { Sparkles, ArrowRight, AlertCircle } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -20,28 +19,17 @@ interface HomeData {
   dueTodayCount: number;
 }
 
-type ExtractedRow = ExtractedTask & { selected: boolean; _key: number };
-
-type PageState = "capture" | "extracting" | "review" | "saving" | "saved";
-
 // ── Component ──────────────────────────────────────────────────────────
 
 export default function HomePage() {
   const router = useRouter();
 
-  // Capture
   const [input, setInput] = useState("");
+  const [error, setError] = useState("");
 
   // Pressure radar
   const [pressureData, setPressureData] = useState<HomeData | null>(null);
   const [pressureLoading, setPressureLoading] = useState(true);
-
-  // Extraction flow
-  const [pageState, setPageState] = useState<PageState>("capture");
-  const [extractedTasks, setExtractedTasks] = useState<ExtractedRow[]>([]);
-  const [meetingNoteId, setMeetingNoteId] = useState("");
-  const [savedCount, setSavedCount] = useState(0);
-  const [error, setError] = useState("");
 
   // Load pressure radar data
   useEffect(() => {
@@ -77,114 +65,14 @@ export default function HomePage() {
       .finally(() => setPressureLoading(false));
   }, []);
 
-  // ── Extraction ───────────────────────────────────────────────────────
-
-  async function runExtraction(notes: string) {
-    setError("");
-    setPageState("extracting");
-    try {
-      const res = await fetch("/api/meeting-notes/extract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          rawNotes: notes,
-          meetingDate: new Date().toISOString().split("T")[0],
-        }),
-      });
-      if (!res.ok) {
-        const d = await res.json();
-        throw new Error(d.error || "Extraction failed");
-      }
-      const data = await res.json();
-      const sorted = [...data.tasks].sort((a: ExtractedTask, b: ExtractedTask) =>
-        (a.ownerName || "").localeCompare(b.ownerName || "")
-      );
-      setMeetingNoteId(data.meetingNoteId);
-      const rows = sorted.map((t: ExtractedTask, i: number) => ({
-        ...t,
-        selected: true,
-        _key: i,
-      }));
-      setExtractedTasks(rows);
-      setPageState("review");
-      // Auto-fill contact details for each owner from previous tasks
-      rows.forEach((t: ExtractedRow) => {
-        if (t.ownerName && (!t.ownerPhone || !t.ownerEmail)) {
-          lookupOwnerForTask(t._key, t.ownerName);
-        }
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Extraction failed");
-      setPageState("capture");
-    }
-  }
+  // ── Capture → redirect to /meeting-notes ─────────────────────────────
 
   function handleCapture() {
-    if (!input.trim()) return;
-    runExtraction(input.trim());
-  }
-
-  function updateTask(key: number, field: string, value: string | boolean) {
-    setExtractedTasks((prev) =>
-      prev.map((t) => (t._key === key ? { ...t, [field]: value } : t))
-    );
-  }
-
-  async function lookupOwnerForTask(key: number, ownerName: string) {
-    if (!ownerName.trim()) return;
-    try {
-      const res = await fetch(`/api/owners?name=${encodeURIComponent(ownerName.trim())}`);
-      const data = await res.json();
-      if (data) {
-        setExtractedTasks((prev) =>
-          prev.map((t) =>
-            t._key === key
-              ? {
-                  ...t,
-                  ownerPhone: t.ownerPhone || data.ownerPhone || "",
-                  ownerEmail: t.ownerEmail || data.ownerEmail || "",
-                }
-              : t
-          )
-        );
-      }
-    } catch {
-      // silently ignore
-    }
-  }
-
-  async function handleSave() {
-    const selected = extractedTasks.filter((t) => t.selected);
-    if (selected.length === 0) return;
-    setPageState("saving");
+    const notes = input.trim();
+    if (!notes) { setError("Please type or paste your meeting notes first."); return; }
     setError("");
-    try {
-      const res = await fetch("/api/meeting-notes/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          meetingNoteId,
-          meetingName: "",
-          meetingDate: new Date().toISOString().split("T")[0],
-          tasks: selected,
-        }),
-      });
-      if (!res.ok) {
-        const d = await res.json();
-        throw new Error(d.error || "Save failed");
-      }
-      const result = await res.json();
-      setSavedCount(result.saved);
-      setPageState("saved");
-      setTimeout(() => {
-        setInput("");
-        setExtractedTasks([]);
-        setPageState("capture");
-      }, 2000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed");
-      setPageState("review");
-    }
+    sessionStorage.setItem("pendingNotes", notes);
+    router.push("/meeting-notes");
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────
@@ -192,201 +80,9 @@ export default function HomePage() {
   const hour = new Date().getHours();
   const greeting =
     hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
-  const isLong = true; // always extract
-  const selectedCount = extractedTasks.filter((t) => t.selected).length;
 
   // ── Render ───────────────────────────────────────────────────────────
 
-  // ── SAVED confirmation ───────────────────────────────────────────────
-  if (pageState === "saved") {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <CheckCircle2 size={40} className="text-green-500 mx-auto mb-3" />
-          <p className="text-lg font-semibold text-gray-800">
-            {savedCount} task{savedCount !== 1 ? "s" : ""} saved
-          </p>
-          <p className="text-sm text-gray-400 mt-1">Returning to home…</p>
-        </div>
-      </div>
-    );
-  }
-
-  // ── EXTRACTING loading state ──────────────────────────────────────────
-  if (pageState === "extracting") {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <Sparkles size={32} className="text-indigo-400 mx-auto mb-3 animate-pulse" />
-          <p className="text-sm font-medium text-gray-600">Extracting tasks…</p>
-          <p className="text-xs text-gray-400 mt-1">Reading your notes</p>
-        </div>
-      </div>
-    );
-  }
-
-  // ── REVIEW extracted tasks ────────────────────────────────────────────
-  if (pageState === "review" || pageState === "saving") {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="max-w-2xl mx-auto px-6 pt-10 pb-12">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <button
-                onClick={() => setPageState("capture")}
-                className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 mb-2 transition-colors"
-              >
-                <ArrowLeft size={12} /> Back
-              </button>
-              <h2 className="text-lg font-semibold text-gray-900">
-                {extractedTasks.length} tasks extracted
-              </h2>
-              <div className="flex items-center gap-2 mt-1 flex-wrap">
-                <span className="text-xs text-gray-400">{selectedCount} selected</span>
-                {extractedTasks.filter(t => t.confidenceScore >= 0.8).length > 0 && (
-                  <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                    ✓ {extractedTasks.filter(t => t.confidenceScore >= 0.8).length} high confidence
-                  </span>
-                )}
-                {extractedTasks.filter(t => t.needsReview).length > 0 && (
-                  <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
-                    ⚠ {extractedTasks.filter(t => t.needsReview).length} needs review
-                  </span>
-                )}
-              </div>
-            </div>
-            <button
-              onClick={handleSave}
-              disabled={pageState === "saving" || selectedCount === 0}
-              className="flex items-center gap-2 bg-green-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              <Save size={14} />
-              {pageState === "saving"
-                ? "Saving…"
-                : `Save ${selectedCount} Task${selectedCount !== 1 ? "s" : ""}`}
-            </button>
-          </div>
-
-          {error && (
-            <div className="mb-4 flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">
-              <AlertCircle size={14} />
-              {error}
-            </div>
-          )}
-
-          {/* Task list */}
-          <div className="space-y-3">
-            {extractedTasks.map((task) => (
-              <div
-                key={task._key}
-                className={`bg-white rounded-xl border px-4 py-4 transition-all ${
-                  !task.selected ? "border-gray-100 opacity-50" : task.needsReview ? "border-amber-300" : "border-gray-200"
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  {/* Checkbox */}
-                  <input
-                    type="checkbox"
-                    checked={task.selected}
-                    onChange={(e) => updateTask(task._key, "selected", e.target.checked)}
-                    className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 cursor-pointer"
-                  />
-
-                  <div className="flex-1 space-y-2.5">
-                    {/* Source sentence */}
-                    {task.sourceText && (
-                      <p className="text-xs text-gray-400 italic border-l-2 border-gray-200 pl-2 line-clamp-2">
-                        &ldquo;{task.sourceText}&rdquo;
-                      </p>
-                    )}
-                    {/* Confidence badge */}
-                    {task.needsReview && (
-                      <p className="text-xs text-amber-600 font-medium">⚠ Missing owner or date — please fill in</p>
-                    )}
-                    {/* Title */}
-                    <input
-                      value={task.title}
-                      onChange={(e) => updateTask(task._key, "title", e.target.value)}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                    />
-
-                    {/* Owner + Due Date — the two fields that matter */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-xs text-gray-400 mb-0.5">Owner</label>
-                        <input
-                          value={task.ownerName}
-                          onChange={(e) => updateTask(task._key, "ownerName", e.target.value)}
-                          onBlur={(e) => lookupOwnerForTask(task._key, e.target.value)}
-                          placeholder="Owner name"
-                          className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-400 mb-0.5">
-                          Due Date{" "}
-                          {!task.dueDate && (
-                            <span className="text-amber-500">· not detected</span>
-                          )}
-                        </label>
-                        <input
-                          type="date"
-                          value={task.dueDate}
-                          onChange={(e) => updateTask(task._key, "dueDate", e.target.value)}
-                          className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Phone + Email — always visible */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-xs text-gray-400 mb-0.5">WhatsApp</label>
-                        <input
-                          value={task.ownerPhone}
-                          onChange={(e) => updateTask(task._key, "ownerPhone", e.target.value)}
-                          placeholder="+919876543210"
-                          className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-400 mb-0.5">Email <span className="text-gray-300">(backup)</span></label>
-                        <input
-                          type="email"
-                          value={task.ownerEmail || ""}
-                          onChange={(e) => updateTask(task._key, "ownerEmail", e.target.value)}
-                          placeholder="priya@company.com"
-                          className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Bottom save bar */}
-          <div className="mt-5 flex items-center justify-between">
-            <p className="text-xs text-gray-400">
-              Tasks without a due date will be saved with a 30-day default
-            </p>
-            <button
-              onClick={handleSave}
-              disabled={pageState === "saving" || selectedCount === 0}
-              className="flex items-center gap-2 bg-green-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              <Save size={14} />
-              {pageState === "saving" ? "Saving…" : `Save ${selectedCount} Tasks`}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ── CAPTURE (default home) ────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-2xl mx-auto px-6 pt-14 pb-12">
