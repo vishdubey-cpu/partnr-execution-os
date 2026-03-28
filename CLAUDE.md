@@ -81,6 +81,7 @@ NEXT_PUBLIC_BASE_URL=https://...railway...
 | `GET /api/jobs/weekly-summary` | weekly summary send |
 | `POST /api/meeting-notes/extract` | AI extraction + contact backfill |
 | `POST /api/meeting-notes/save` | save tasks + send assignment emails + calendar invites |
+| `POST /api/email-ingest` | inbound email → auto-extract + create tasks (Resend webhook or Apps Script) |
 | `GET /api/test-email?to=email` | debug endpoint — test Resend delivery, returns email ID |
 
 ---
@@ -138,6 +139,54 @@ npm run db:seed              # seed 20 tasks + 7 users
 npx prisma generate          # after schema changes (also runs in build now)
 git add ... && git commit && git push origin main   # deploy to Railway
 ```
+
+## Email Ingest (zero-friction MoM → tasks)
+
+### How it works
+Forward or BCC any MoM email to `tasks@claimback.in` → tasks auto-created → confirmation email sent to admin.
+
+### Setup: Resend Inbound
+1. Resend Dashboard → Inbound → Add domain route
+2. Email address: `tasks@claimback.in`
+3. Webhook URL: `https://[railway-url]/api/email-ingest?secret=YOUR_SECRET`
+4. Add `INBOUND_WEBHOOK_SECRET=YOUR_SECRET` to Railway env vars
+5. Add Resend's MX record for `claimback.in` (if no existing MX conflicts)
+
+### Alternative: Google Apps Script (no MX change needed)
+1. In Gmail, create a label: **MOM**
+2. Create a Gmail filter: subject contains "MOM" → apply label "MOM" (or manually label emails)
+3. Open script.google.com → New project → paste the script below → set webhook URL + secret → save
+4. Add a time-driven trigger: run `processNewMoMEmails` every 15 minutes
+
+```javascript
+function processNewMoMEmails() {
+  const WEBHOOK_URL = "https://YOUR-RAILWAY-URL/api/email-ingest";
+  const SECRET     = "YOUR_INBOUND_WEBHOOK_SECRET";
+  const label = GmailApp.getUserLabelByName("MOM");
+  if (!label) { Logger.log("Label 'MOM' not found"); return; }
+  const threads = label.getThreads(0, 20);
+  for (const thread of threads) {
+    for (const msg of thread.getMessages()) {
+      if (!msg.isUnread()) continue;
+      const payload = {
+        subject: msg.getSubject(),
+        text:    msg.getPlainBody(),
+        from:    msg.getFrom(),
+        date:    msg.getDate().toISOString(),
+      };
+      UrlFetchApp.fetch(WEBHOOK_URL + "?secret=" + SECRET, {
+        method: "post", contentType: "application/json",
+        payload: JSON.stringify(payload), muteHttpExceptions: true,
+      });
+      msg.markRead();
+    }
+  }
+}
+```
+
+### Security
+- Set `INBOUND_WEBHOOK_SECRET` in Railway env vars
+- Pass as `?secret=` query param or `Authorization: Bearer` header
 
 ## Gotchas
 - `build` script is `prisma generate && next build` — required so Railway gets updated Prisma client
