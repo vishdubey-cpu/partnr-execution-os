@@ -4,8 +4,10 @@
  * Sends WhatsApp reminders based on task due dates and overdue thresholds.
  */
 
+import * as Sentry from "@sentry/nextjs";
 import { prisma } from "@/lib/prisma";
 import { sendEmailReminder } from "@/lib/email";
+import { logger } from "@/lib/logger";
 import {
   sendWhatsAppMessage,
   hasReminderBeenSentToday,
@@ -280,7 +282,24 @@ export async function processReminders(): Promise<ReminderJobResult> {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       result.errors.push(`Task ${task.id} (${task.title}): ${msg}`);
+      logger.error({ job: "reminder-engine", taskId: task.id, err: msg }, "per-task error in reminder engine");
+      Sentry.captureException(err, {
+        tags: { job: "reminder-engine" },
+        extra: { taskId: task.id, taskTitle: task.title },
+      });
     }
+  }
+
+  if (result.errors.length > 0) {
+    logger.warn(
+      { job: "reminder-engine", errorCount: result.errors.length, tasksChecked: result.tasks_checked },
+      "reminder engine completed with errors"
+    );
+  } else {
+    logger.info(
+      { job: "reminder-engine", tasksChecked: result.tasks_checked, remindersSent: result.reminders_sent, escalations: result.escalations_sent },
+      "reminder engine completed"
+    );
   }
 
   return result;

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { prisma } from "@/lib/prisma";
 import { sendDailyDigest } from "@/lib/email";
+import { logger } from "@/lib/logger";
 import { isBefore, isToday } from "date-fns";
 
 const isOverdue = (dueDate: Date | null, status: string) =>
@@ -30,7 +32,7 @@ export async function GET(req: Request) {
     if (!force) {
       const alreadySent = await prisma.digestLog.findUnique({ where: { date: todayIST } });
       if (alreadySent) {
-        console.log(`[daily-digest] Already sent for ${todayIST}, skipping.`);
+        logger.info({ job: "daily-digest", date: todayIST }, "already sent today, skipping");
         return NextResponse.json({ skipped: true, reason: `Already sent for ${todayIST}` });
       }
     }
@@ -133,7 +135,7 @@ export async function GET(req: Request) {
         await prisma.digestLog.create({ data: { date: todayIST } });
       } catch {
         // Unique constraint violation = another concurrent call already created it
-        console.log(`[daily-digest] Concurrent send detected for ${todayIST}, skipping.`);
+        logger.info({ job: "daily-digest", date: todayIST }, "concurrent send detected, skipping");
         return NextResponse.json({ skipped: true, reason: "Concurrent send detected" });
       }
     }
@@ -161,9 +163,15 @@ export async function GET(req: Request) {
       },
     });
 
+    logger.info(
+      { job: "daily-digest", date: todayIST, needsDecision: needsDecision.length, drifting: drifting.length, overdueCount: overdueTasks.length },
+      "digest sent"
+    );
     return NextResponse.json({ sent: true, to: adminEmail, needsDecision: needsDecision.length, drifting: drifting.length });
   } catch (err) {
-    console.error("[daily-digest] Error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error({ job: "daily-digest", err: msg }, "fatal error");
+    Sentry.captureException(err, { tags: { job: "daily-digest" } });
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

@@ -82,6 +82,7 @@ NEXT_PUBLIC_BASE_URL=https://...railway...
 | `POST /api/meeting-notes/extract` | AI extraction + contact backfill |
 | `POST /api/meeting-notes/save` | save tasks + send assignment emails + calendar invites |
 | `POST /api/email-ingest` | inbound email → auto-extract + create tasks (Resend webhook or Apps Script) |
+| `GET /api/healthz` | liveness/readiness probe — DB ping + uptime + version (public, used by Railway) |
 | `GET /api/test-email?to=email` | debug endpoint — test Resend delivery, returns email ID |
 
 ---
@@ -188,9 +189,41 @@ function processNewMoMEmails() {
 - Set `INBOUND_WEBHOOK_SECRET` in Railway env vars
 - Pass as `?secret=` query param or `Authorization: Bearer` header
 
+## Observability (Sprint 1)
+
+### Logger
+All structured logs go through `src/lib/logger.ts` (pino). Format:
+```ts
+import { logger } from "@/lib/logger";
+logger.info({ taskId, provider: "RESEND" }, "email sent");
+logger.error({ err: msg }, "send failed");
+```
+- Production: single-line JSON (Railway log explorer parses it)
+- Development: pretty-printed
+- Override level with `LOG_LEVEL=debug` env var
+- Use `logger.child({ ...bindings })` to add request/job context
+
+### Sentry
+- Configured via `sentry.{server,client,edge}.config.ts` + `instrumentation.ts`
+- If `SENTRY_DSN` is unset, all init calls are no-ops (safe to deploy without)
+- Error handlers in `email-ingest`, `daily-digest`, `reminder-engine` call `Sentry.captureException`
+- Source maps upload only when `SENTRY_AUTH_TOKEN` is set
+
+### Idempotency
+- `Reminder.idempotencyKey` is unique. Format:
+  - Daily reminders: `${taskId}:${type}:${YYYY-MM-DD}` (IST date)
+  - One-shot reminders (`task_assigned`, `midpoint_check`): `${taskId}:${type}:once`
+- `sendEmailReminder` checks the key before sending; on race it catches the unique-constraint violation
+- Failed sends are NOT idempotency-locked (so retries can succeed)
+
+### Health probe
+- `GET /api/healthz` — public, returns 200 with DB ping latency + uptime + git SHA
+- 503 if any check fails. Wire Railway healthcheck to this URL.
+
 ## Gotchas
 - `build` script is `prisma generate && next build` — required so Railway gets updated Prisma client
 - After schema changes: `npm run db:push` syncs to Railway DB (uses .env DATABASE_URL which points to Railway)
 - User model has NO email field — owner emails live on Task.ownerEmail
 - Reminder table requires taskId — can't store digest logs there (use DigestLog table)
-- next.config.js (not .ts) — Next.js 14.2.x doesn't support TS config
+- next.config.js (not .ts) — Next.js 14.2.x doesn't support TS config; the file is wrapped with `withSentryConfig` only when `SENTRY_DSN` is set
+- `instrumentation.ts` at repo root — Next.js auto-loads this for Sentry init. Don't move it.

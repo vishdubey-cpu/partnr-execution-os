@@ -12,9 +12,11 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { extractTasksFromNotes } from "@/lib/ai-extractor";
 import { prisma } from "@/lib/prisma";
 import { sendEmail, sendEmailReminder } from "@/lib/email";
+import { logger } from "@/lib/logger";
 import { isBefore } from "date-fns";
 
 // ── Email body cleaning ───────────────────────────────────────────────────────
@@ -164,7 +166,7 @@ export async function POST(req: NextRequest) {
       const tokenFromHeader = authHeader.replace(/^Bearer\s+/i, "");
       const tokenFromQuery = new URL(req.url).searchParams.get("secret");
       if (tokenFromHeader !== secret && tokenFromQuery !== secret) {
-        console.warn("[email-ingest] Rejected: invalid secret");
+        logger.warn({ route: "email-ingest" }, "rejected: invalid secret");
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       }
     }
@@ -190,8 +192,10 @@ export async function POST(req: NextRequest) {
     const bodyText = rawText || htmlToText(rawHtml);
     const cleanedBody = cleanEmailBody(bodyText);
 
+    const log = logger.child({ route: "email-ingest", from, subject });
+
     if (cleanedBody.length < 30) {
-      console.log(`[email-ingest] Body too short after cleaning (${cleanedBody.length} chars), skipping`);
+      log.info({ cleanedBodyLength: cleanedBody.length }, "body too short after cleaning, skipping");
       return NextResponse.json({ created: 0, message: "Email body too short — nothing to extract" });
     }
 
@@ -199,13 +203,13 @@ export async function POST(req: NextRequest) {
       subjectToMeetingName(subject) ||
       `Email – ${emailDate.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}`;
 
-    console.log(`[email-ingest] Processing email: "${subject}" from ${from}`);
+    log.info({ meetingName }, "processing email");
 
     // ── AI extraction ────────────────────────────────────────────────────
     const { tasks, provider } = await extractTasksFromNotes(cleanedBody, meetingName, emailDate);
 
     if (tasks.length === 0) {
-      console.log(`[email-ingest] No tasks extracted from "${subject}"`);
+      log.info({ provider }, "no tasks extracted");
       return NextResponse.json({ created: 0, message: "No action items found in email" });
     }
 
@@ -296,11 +300,14 @@ export async function POST(req: NextRequest) {
           t.ownerEmail,
           task.owner,
           { id: task.id, title: task.title, owner: task.owner, dueDate: task.dueDate ?? new Date(), source: task.source }
-        ).catch((e) => console.error(`[email-ingest] assignment email failed for ${task.id}:`, e));
+        ).catch((e) => {
+          log.error({ err: e instanceof Error ? e.message : String(e), createdTaskId: task.id }, "assignment email failed");
+          Sentry.captureException(e, { tags: { route: "email-ingest", phase: "assignment-email" }, extra: { taskId: task.id } });
+        });
       }
     }
 
-    console.log(`[email-ingest] Created ${createdTasks.length} tasks from "${subject}" via ${provider}`);
+    log.info({ created: createdTasks.length, provider }, "tasks created from email");
 
     // ── Send confirmation to admin ────────────────────────────────────────
     const adminEmail = process.env.ADMIN_EMAIL;
@@ -320,7 +327,10 @@ export async function POST(req: NextRequest) {
         subject: `✓ ${createdTasks.length} tasks created — ${meetingName}`,
         html,
         ccList: [],
-      }).catch((e) => console.error("[email-ingest] confirmation email failed:", e));
+      }).catch((e) => {
+        log.error({ err: e instanceof Error ? e.message : String(e) }, "confirmation email failed");
+        Sentry.captureException(e, { tags: { route: "email-ingest", phase: "confirmation-email" } });
+      });
     }
 
     return NextResponse.json({
@@ -332,7 +342,8 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    console.error("[email-ingest] Fatal error:", msg);
+    logger.error({ route: "email-ingest", err: msg }, "fatal error");
+    Sentry.captureException(error, { tags: { route: "email-ingest" } });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

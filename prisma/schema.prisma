@@ -80,7 +80,13 @@ model Reminder {
   status         String   @default("SENT")
   message        String
   metadata       String?
+  // Deterministic idempotency key — prevents duplicate sends on retries.
+  // Format: `${taskId}:${type}:${YYYY-MM-DD}` for daily reminders,
+  //         `${taskId}:${type}:once` for one-shot reminders (assignment, midpoint, etc).
+  idempotencyKey String?  @unique
   sentAt         DateTime @default(now())
+
+  @@index([taskId, type, sentAt])
 }
 
 model MeetingNote {

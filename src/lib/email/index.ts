@@ -6,7 +6,28 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { logger } from "@/lib/logger";
 import nodemailer from "nodemailer";
+
+/**
+ * Build a deterministic idempotency key for a reminder send.
+ *
+ * Daily reminders (e.g. due_today, overdue_1_day) bucket by IST date so the
+ * same task can't be reminded twice on the same day even if the cron retries.
+ * One-shot reminders (task_assigned, midpoint_check) use ":once" so they can
+ * never duplicate across the lifetime of the task.
+ *
+ * Buckets are evaluated in IST because the digest/reminder cron is anchored to IST.
+ */
+function buildIdempotencyKey(type: string, taskId: string): string {
+  const ONE_SHOT_TYPES = new Set(["task_assigned", "midpoint_check"]);
+  if (ONE_SHOT_TYPES.has(type)) {
+    return `${taskId}:${type}:once`;
+  }
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const istDate = new Date(Date.now() + istOffset).toISOString().split("T")[0];
+  return `${taskId}:${type}:${istDate}`;
+}
 
 // Returns array of Chief of Staff emails from env var
 function getCoSEmails(): string[] {
@@ -62,9 +83,15 @@ export async function sendEmail(opts: {
     if (!res.ok) {
       throw new Error(`Resend API ${res.status}: ${JSON.stringify(resBody)}`);
     }
-    console.log(`[Email RESEND] Accepted | id=${resBody.id} | to=${opts.to} | subject="${opts.subject}"`);
+    logger.info(
+      { provider: "RESEND", resendId: resBody.id, to: opts.to, cc, subject: opts.subject },
+      "email sent"
+    );
   } else {
-    console.log(`[Email MOCK] To: ${opts.to}${cc.length ? ` | CC: ${cc.join(", ")}` : ""} | Subject: ${opts.subject}`);
+    logger.info(
+      { provider: "MOCK", to: opts.to, cc, subject: opts.subject },
+      "email mocked (no provider configured)"
+    );
   }
 }
 
@@ -524,9 +551,24 @@ export async function sendEmailReminder(
   recipientName: string,
   taskData: TaskData,
   extra?: Record<string, string>
-): Promise<{ success: boolean; provider: string }> {
+): Promise<{ success: boolean; provider: string; deduped?: boolean }> {
   const subject = buildSubject(type, taskData);
   const html = buildBody(type, recipientName, taskData, extra);
+  const idempotencyKey = buildIdempotencyKey(type, taskId);
+
+  const log = logger.child({ taskId, type, recipientEmail, idempotencyKey });
+
+  // ── Idempotency check: bail if already sent for this bucket ──────────
+  // This is a soft check — the unique constraint on Reminder.idempotencyKey
+  // is the hard guarantee. The check exists so we don't waste an API call.
+  const existing = await prisma.reminder.findUnique({
+    where: { idempotencyKey },
+    select: { id: true, status: true },
+  });
+  if (existing && existing.status === "SENT") {
+    log.info({ existingReminderId: existing.id }, "reminder skipped — already sent for this bucket");
+    return { success: true, provider: "DEDUPED", deduped: true };
+  }
 
   const emailProvider = process.env.EMAIL_PROVIDER?.toUpperCase();
   const provider =
@@ -535,6 +577,8 @@ export async function sendEmailReminder(
       : emailProvider === "RESEND" && process.env.RESEND_API_KEY
       ? "RESEND"
       : "MOCK";
+
+  const t0 = Date.now();
 
   try {
     if (provider === "GMAIL") {
@@ -570,33 +614,45 @@ export async function sendEmailReminder(
       if (!res.ok) {
         throw new Error(`Resend API ${res.status}: ${JSON.stringify(resBody)}`);
       }
-      // Log Resend's email ID so it can be looked up in the Resend dashboard
-      console.log(`[Email RESEND] Accepted | id=${resBody.id} | to=${recipientEmail} | subject="${subject}"`);
-    } else {
-      // Mock: log to console
-      console.log(
-        `[Email MOCK] To: ${recipientEmail} | Subject: ${subject} | Type: ${type}`
+      log.info(
+        { provider, resendId: resBody.id, subject, latencyMs: Date.now() - t0 },
+        "email sent"
       );
+    } else {
+      log.info({ provider: "MOCK", subject }, "email mocked (no provider configured)");
     }
 
-    // Save to Reminder table
-    await prisma.reminder.create({
-      data: {
-        taskId,
-        type,
-        channel: "EMAIL",
-        recipientName,
-        recipientPhone: "",
-        recipientEmail,
-        provider,
-        status: "SENT",
-        message: subject,
-      },
-    });
+    // Save to Reminder with idempotencyKey. If a concurrent send beat us to it,
+    // the unique constraint will reject — treat that as "already sent".
+    try {
+      await prisma.reminder.create({
+        data: {
+          taskId,
+          type,
+          channel: "EMAIL",
+          recipientName,
+          recipientPhone: "",
+          recipientEmail,
+          provider,
+          status: "SENT",
+          message: subject,
+          idempotencyKey,
+        },
+      });
+    } catch (dbErr) {
+      const msg = dbErr instanceof Error ? dbErr.message : String(dbErr);
+      if (msg.includes("Unique constraint") || msg.includes("idempotencyKey")) {
+        log.warn({ err: msg }, "concurrent send won the race — duplicate prevented");
+        return { success: true, provider, deduped: true };
+      }
+      throw dbErr;
+    }
 
     return { success: true, provider };
   } catch (err) {
-    console.error("[Email] Send failed:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    log.error({ err: msg, provider, latencyMs: Date.now() - t0 }, "email send failed");
+    // Failed sends are NOT idempotency-locked — leave key off so retries can succeed.
     await prisma.reminder.create({
       data: {
         taskId,
@@ -608,7 +664,7 @@ export async function sendEmailReminder(
         provider,
         status: "FAILED",
         message: subject,
-        metadata: err instanceof Error ? err.message : String(err),
+        metadata: msg,
       },
     });
     return { success: false, provider };
